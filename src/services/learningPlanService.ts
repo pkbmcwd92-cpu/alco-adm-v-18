@@ -86,6 +86,7 @@ export interface LearningPlanScopeUnit {
   atpItem?: ATPItem;
   linkedTpIds: string[];
   linkedAtpItemIds: string[];
+  unitTitle?: string;
   materialScope?: string;
   jp?: number | null;
 }
@@ -262,6 +263,7 @@ export function resolveSemesterLearningScopes(
           atpItem: atpItem,
           linkedTpIds: [linkedTp.id],
           linkedAtpItemIds: [atpItem.id],
+          unitTitle: atpItem.unitTitle,
           materialScope: material,
           jp: allocatedJP,
         });

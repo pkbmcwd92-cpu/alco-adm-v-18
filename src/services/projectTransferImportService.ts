@@ -284,6 +284,7 @@ export function performImportProjectTransferInState(
       tpId: matchedTPItem.id,
       tpCode: matchedTPItem.code,
       tpStatement: matchedTPItem.statement,
+      unitTitle: a.unit && a.unit.trim() ? a.unit.trim() : undefined,
       materialScope: (a.material || matchedTPItem.contentScope || '').trim(),
       allocatedJP: jpVal,
       jp: jpVal,
