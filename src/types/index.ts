@@ -443,6 +443,7 @@ export type DocumentType =
   | 'ANALISIS_CP_TP'
   | 'TP'
   | 'ATP'
+  | 'PEMETAAN_ATP_UNIT'
   | 'PROTA'
   | 'PROMES'
   | 'MODUL_AJAR'

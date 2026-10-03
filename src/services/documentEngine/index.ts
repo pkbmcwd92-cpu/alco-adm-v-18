@@ -8,6 +8,7 @@ import { generateAnalisisCpTp } from './generators/analisisCpTpGenerator';
 import { generateCP } from './generators/cpGenerator';
 import { generateTP } from './generators/tpGenerator';
 import { generateATP } from './generators/atpGenerator';
+import { generatePemetaanAtpUnit } from './generators/pemetaanAtpUnitGenerator';
 import { generatePROTA } from './generators/protaGenerator';
 import { generatePROMES } from './generators/promesGenerator';
 import { generateModulAjar } from './generators/modulAjarGenerator';
@@ -48,6 +49,7 @@ export {
   generateTP,
   generateAnalisisCpTp,
   generateATP,
+  generatePemetaanAtpUnit,
   generatePROTA,
   generatePROMES,
   generateModulAjar,
@@ -99,6 +101,14 @@ export const DOCUMENT_CATALOG: DocumentCatalogItem[] = [
     title: 'Alur Tujuan Pembelajaran (ATP)',
     description: 'Dokumen turunan CP & TP yang memuat alur langkah pembelajaran bertahap, alokasi JP, Dimensi Profil Lulusan, rencana asesmen, dan glosarium.',
     requiredSources: ['Data Profil & Sekolah', 'Data Akademik', 'Tujuan Pembelajaran (TP)', 'Matriks ATP'],
+  },
+  {
+    id: 'PEMETAAN_ATP_UNIT',
+    type: 'PEMETAAN_ATP_UNIT',
+    category: 'Perencanaan Utama',
+    title: 'Pemetaan ATP, Unit/Bab, dan Lingkup Materi',
+    description: 'Pemetaan matriks Alur Tujuan Pembelajaran (ATP) yang dikelompokkan berdasarkan Unit/Bab, urutan TP, lingkup materi, serta alokasi minggu dan jam pelajaran.',
+    requiredSources: ['Data Akademik', 'Tujuan Pembelajaran (TP)', 'Alur Tujuan Pembelajaran (ATP)', 'Alokasi Waktu'],
   },
   {
     id: 'KALENDER_AKADEMIK',
@@ -304,6 +314,7 @@ export function validateDocumentRequirements(
     if (
       type === 'ANALISIS_CP_TP' ||
       type === 'ATP' ||
+      type === 'PEMETAAN_ATP_UNIT' ||
       type === 'MODUL_AJAR' ||
       type === 'KKTP' ||
       type === 'ASESMEN' ||
@@ -418,6 +429,23 @@ export function validateDocumentRequirements(
         }
         break;
 
+      case 'PEMETAAN_ATP_UNIT': {
+        if (tpCount === 0) {
+          missingFields.push('Tujuan Pembelajaran (TP) belum disusun');
+        }
+        if (atpCount === 0) {
+          missingFields.push('Matriks Alur Tujuan Pembelajaran (ATP) masih kosong');
+        } else {
+          const hasUnitTitle = context.atp?.items?.some(
+            (item) => typeof item.unitTitle === 'string' && item.unitTitle.trim().length > 0
+          );
+          if (!hasUnitTitle) {
+            missingFields.push('Minimal satu butir ATP harus memiliki Unit / Bab');
+          }
+        }
+        break;
+      }
+
       case 'PROTA': {
         const projection = buildProtaProjection(context as DocumentGenerationContext);
         if (!projection.isReady) {
@@ -507,9 +535,9 @@ export function validateDocumentRequirements(
         targetStep = 'academic';
       } else if (!cpHasContent) {
         targetStep = 'cp';
-      } else if (tpCount === 0 && (type === 'ATP' || type === 'MODUL_AJAR' || type === 'ASESMEN' || type === 'KKTP')) {
+      } else if (tpCount === 0 && (type === 'ATP' || type === 'PEMETAAN_ATP_UNIT' || type === 'MODUL_AJAR' || type === 'ASESMEN' || type === 'KKTP')) {
         targetStep = 'tp';
-      } else if (atpCount === 0 && (type === 'PROTA' || type === 'PROMES' || type === 'ATP' || type === 'MODUL_AJAR' || type === 'ASESMEN')) {
+      } else if (atpCount === 0 && (type === 'PROTA' || type === 'PROMES' || type === 'ATP' || type === 'PEMETAAN_ATP_UNIT' || type === 'MODUL_AJAR' || type === 'ASESMEN')) {
         targetStep = 'atp';
       }
 
@@ -556,6 +584,9 @@ export async function generateDocument(
       break;
     case 'ATP':
       result = await generateATP(context);
+      break;
+    case 'PEMETAAN_ATP_UNIT':
+      result = await generatePemetaanAtpUnit(context);
       break;
     case 'KALENDER_AKADEMIK':
       result = await generateKalenderAkademik(context);
