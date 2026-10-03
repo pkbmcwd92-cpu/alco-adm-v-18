@@ -1,4 +1,14 @@
-import { CPElem, TPItem, ATPItem, AcademicSetting, LearningPlan } from '../types';
+import {
+  CPElem,
+  TPItem,
+  ATPItem,
+  AcademicSetting,
+  LearningPlan,
+  TPData,
+  ATPData,
+  CPAnalysisData,
+  ATPUnitMappingData,
+} from '../types';
 import {
   normalizeLearningExperiencePhase,
   normalizeAIAssessmentPlan,
@@ -520,4 +530,46 @@ export async function generateATPMappingWithAI(
     throw new Error(formatAIErrorMessage(err, 'menyusun pemetaan Unit/Bab & Lingkup Materi'));
   }
 }
+
+export interface GenerateCanonicalATPUnitMappingParams {
+  academicSettingId?: string;
+  subject?: string;
+  grade?: string;
+  phase?: string;
+  tpData: TPData;
+  atpData: ATPData;
+  cpAnalysisData?: CPAnalysisData;
+  existingMapping?: ATPUnitMappingData;
+  targetUnitCount?: number;
+  targetMaterialCountPerUnit?: number;
+}
+
+export async function generateCanonicalATPUnitMappingWithAI(
+  params: GenerateCanonicalATPUnitMappingParams
+): Promise<ATPUnitMappingData> {
+  try {
+    const res = await aiFetch('/api/ai/generate-canonical-atp-unit-mapping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.code === 'AI_NOT_CONFIGURED') {
+        throw new Error('Layanan AI belum dikonfigurasi pada server.');
+      }
+      throw new Error(errData.error || `Gagal menyusun pemetaan Unit/Bab dengan AI (Status ${res.status})`);
+    }
+
+    const data = await res.json();
+    if (!data.data || !Array.isArray(data.data.units)) {
+      throw new Error('Hasil respon AI Pemetaan Unit tidak memuat data Bab / Unit yang valid.');
+    }
+    return data.data;
+  } catch (err) {
+    throw new Error(formatAIErrorMessage(err, 'menyusun pemetaan Unit/Bab & Lingkup Materi'));
+  }
+}
+
 

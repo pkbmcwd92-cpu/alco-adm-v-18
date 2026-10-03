@@ -17,6 +17,7 @@ import {
   fallbackAnalyzeCP,
   fallbackRefineText,
   fallbackGenerateATPMapping,
+  fallbackGenerateCanonicalATPUnitMapping,
 } from './server/curriculumFallback';
 import { validateGraduateProfileDimensions } from './src/constants/graduateProfileDimensions';
 
@@ -1029,6 +1030,332 @@ Kembalikan output JSON sesuai skema:
   });
 
   return res.json({ success: true, data: fallback, engine: 'pedagogical_engine' });
+});
+
+// 3c. Endpoint: Canonical AI Generate ATPUnitMappingData (Multi-Material & Semantic Bab Clustering)
+app.post('/api/ai/generate-canonical-atp-unit-mapping', async (req, res) => {
+  const {
+    academicSettingId = '',
+    subject = 'Mata Pelajaran',
+    grade = '',
+    phase = '',
+    tpData,
+    atpData,
+    cpAnalysisData,
+    existingMapping,
+    targetUnitCount = 6,
+    targetMaterialCountPerUnit,
+  } = req.body || {};
+
+  const validTpItems = Array.isArray(tpData?.items) ? tpData.items : [];
+  const validAtpItems = Array.isArray(atpData?.items)
+    ? [...atpData.items].sort((a, b) => (a.stepNumber || 0) - (b.stepNumber || 0))
+    : [];
+
+  if (validTpItems.length === 0 || validAtpItems.length === 0) {
+    return res.status(400).json({ error: 'Data TP dan ATP tidak boleh kosong untuk menyusun pemetaan unit.' });
+  }
+
+  const tpMap = new Map<string, (typeof validTpItems)[0]>();
+  validTpItems.forEach((tp) => tpMap.set(tp.id, tp));
+
+  const atpMap = new Map<string, (typeof validAtpItems)[0]>();
+  validAtpItems.forEach((atp) => atpMap.set(atp.id, atp));
+
+  const count = Math.max(1, Math.min(20, Number(targetUnitCount) || 6));
+
+  const apiKey = resolveApiKey(req);
+  if (apiKey) {
+    try {
+      const ai = createAIClient(apiKey);
+
+      const prompt = `Anda adalah pakar pengembang kurikulum dan perangkat pembelajaran Kurikulum Merdeka.
+Tugas Anda adalah melakukan pengelompokan tematis (Semantic Clustering) butir-butir Tujuan Pembelajaran (TP) dan Alur Tujuan Pembelajaran (ATP) ke dalam Unit / Bab Pembelajaran yang bermakna, serta mendekomposisi setiap Bab menjadi beberapa Lingkup Materi Inti.
+
+PRINSIP & OTORITAS PEDAGOGIS (WAJIB DIPATUHI):
+1. TP adalah otoritas konten dan tujuan pembelajaran.
+2. ATP adalah otoritas kronologi / urutan pembelajaran (stepNumber).
+3. Bab / Unit mengelompokkan TP dan langkah ATP yang relevan secara semantik (Semantic Clustering), bukan pembagian butir secara mekanis (misal 12 TP dibagi 6 = 2).
+4. TP dari elemen/domain yang berbeda namun mendukung topik yang sama dapat disatukan dalam satu Bab (misal: TP pemahaman dan TP keterampilan praktis pada topik yang sama).
+5. TP integratif / lintas-elemen (misal: karakter/kebugaran/analisis umum) dapat dikaitkan ke Bab relevan bersama TP konten utama.
+6. Target jumlah Bab adalah ${count} Bab sebagai panduan organisasi. Jika TP/ATP yang tersedia secara alami lebih sesuai dengan jumlah Bab tertentu, gunakan pengelompokan yang paling logis. JANGAN PERNAH membuat TP atau ATP fiktif.
+7. Setiap Bab HARUS didekomposisi menjadi beberapa Lingkup Materi (2 s.d. 5 materi per Bab). Lingkup Materi BUKAN sekadar 1:1 dengan ATP, melainkan rincian topik/fokus esensial yang dipayungi oleh Bab tersebut.
+8. Setiap Lingkup Materi harus mencantumkan relasi linkedTpIds dan linkedAtpItemIds dari TP/ATP yang mendukungnya.
+${
+  existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0
+    ? `9. OTORITAS GURU (MUTLAK): Guru telah mengisi struktur pemetaan sebelumnya. Nama Bab dan nama Lingkup Materi yang sudah diisi guru TIDAK BOLEH DIUBAH/DITIMPA SAMA SEKALI. Anda hanya bertugas melengkapi nama yang kosong atau menyempurnakan relasi TP/ATP.`
+    : ''
+}
+
+DATA KURIKULUM:
+- Mata Pelajaran: ${subject}
+- Kelas / Fase: ${grade} (${phase})
+- Target Jumlah Bab: ${count} Bab
+
+DAFTAR TUJUAN PEMBELAJARAN (TP):
+${validTpItems
+  .map(
+    (tp, i) =>
+      `${i + 1}. [TP_ID: ${tp.id}] Kode: ${tp.code || `TP-${i + 1}`} | Elemen: ${tp.elementName || '-'} | Rumusan: "${
+        tp.statement
+      }" | Lingkup Materi TP: "${tp.contentScope || '-'}" | Kompetensi: "${tp.competence || '-'}"`
+  )
+  .join('\n')}
+
+DAFTAR ALUR TUJUAN PEMBELAJARAN (ATP) SECARA KRONOLOGIS:
+${validAtpItems
+  .map(
+    (atp, i) =>
+      `${i + 1}. [ATP_ID: ${atp.id}] Langkah #${atp.stepNumber || i + 1} (Ref TP_ID: ${atp.tpId || '-'}): "${
+        atp.tpStatement || tpMap.get(atp.tpId || '')?.statement || '-'
+      }"`
+  )
+  .join('\n')}
+${
+  Array.isArray(cpAnalysisData?.items) && cpAnalysisData.items.length > 0
+    ? `\nKONTEKS ANALISIS CP (REFERENSI PENDUKUNG):\n${cpAnalysisData.items
+        .map(
+          (cpa, i) =>
+            `${i + 1}. Elemen: ${cpa.elementName} | Kompetensi: ${cpa.cpCompetence} | Lingkup Materi: ${cpa.materialScope}`
+        )
+        .join('\n')}`
+    : ''
+}
+${
+  existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0
+    ? `\nSTRUKTUR EKSISTING DARI GURU (PERTAHANKAN STRUKTUR & JUDUL NON-KOSONG):\n${JSON.stringify(
+        existingMapping.units.map((u) => ({
+          id: u.id,
+          title: u.title,
+          order: u.order,
+          materials: (u.materials || []).map((m) => ({ id: m.id, title: m.title, order: m.order })),
+        })),
+        null,
+        2
+      )}`
+    : ''
+}
+
+Kembalikan respon JSON dengan skema:
+- units: array Unit / Bab Pembelajaran.
+  - id: ID unik unit (misal "unit-1" atau ID eksisting jika ada)
+  - title: Judul Bab (misal "Bab 1: Menjelajah Teks Deskripsi")
+  - order: Nomor urut Bab (1, 2, 3...)
+  - linkedTpIds: Array ID TP yang dipayungi oleh Bab ini
+  - linkedAtpItemIds: Array ID ATP yang dipayungi oleh Bab ini
+  - materials: Array Lingkup Materi dalam Bab ini
+    - id: ID unik materi (misal "mat-1-1")
+    - title: Judul Lingkup Materi yang bernas dan operasional
+    - order: Nomor urut materi dalam Bab (1, 2, 3...)
+    - linkedTpIds: Array ID TP yang mendukung materi ini
+    - linkedAtpItemIds: Array ID ATP yang mendukung materi ini`;
+
+      const response = await generateContentWithRetry(ai, {
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              units: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    order: { type: Type.INTEGER },
+                    linkedTpIds: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    linkedAtpItemIds: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    materials: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          id: { type: Type.STRING },
+                          title: { type: Type.STRING },
+                          order: { type: Type.INTEGER },
+                          linkedTpIds: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING },
+                          },
+                          linkedAtpItemIds: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING },
+                          },
+                        },
+                        required: ['title', 'order'],
+                      },
+                    },
+                  },
+                  required: ['title', 'order', 'materials'],
+                },
+              },
+            },
+            required: ['units'],
+          },
+        },
+      });
+
+      const parsed = cleanAndParseJSON(response.text, null);
+      if (parsed && Array.isArray(parsed.units) && parsed.units.length > 0) {
+        // SERVER-SIDE DETERMINISTIC MERGE SAFETY & SANITIZATION
+        const rawUnits = parsed.units;
+
+        // Map existing units by order or ID for strict preservation
+        const existingUnitMap = new Map<string, (typeof existingMapping.units)[0]>();
+        if (existingMapping && Array.isArray(existingMapping.units)) {
+          existingMapping.units.forEach((u: any, idx: number) => {
+            if (u.id) existingUnitMap.set(u.id, u);
+            existingUnitMap.set(`order-${u.order || idx + 1}`, u);
+          });
+        }
+
+        const sanitizedUnits = rawUnits.map((u: any, uIdx: number) => {
+          const unitOrder = u.order || uIdx + 1;
+          const matchedExisting =
+            (u.id && existingUnitMap.get(u.id)) ||
+            existingUnitMap.get(`order-${unitOrder}`) ||
+            (existingMapping?.units && existingMapping.units[uIdx]);
+
+          // Strictly preserve teacher title if non-empty
+          const finalTitle =
+            matchedExisting && matchedExisting.title && matchedExisting.title.trim().length > 0
+              ? matchedExisting.title.trim()
+              : (u.title || `Bab ${unitOrder}`).trim();
+
+          const finalUnitId = matchedExisting?.id || u.id || `unit-${Date.now()}-${unitOrder}`;
+
+          // Sanitize linked IDs (only allow IDs that exist in canonical TP and ATP)
+          const validLinkedTpIds = Array.isArray(u.linkedTpIds)
+            ? Array.from(new Set(u.linkedTpIds.filter((id: string) => tpMap.has(id))))
+            : [];
+          const validLinkedAtpItemIds = Array.isArray(u.linkedAtpItemIds)
+            ? Array.from(new Set(u.linkedAtpItemIds.filter((id: string) => atpMap.has(id))))
+            : [];
+
+          // Sanitize materials
+          const existingMaterials = matchedExisting?.materials || [];
+          const rawMaterials = Array.isArray(u.materials) ? u.materials : [];
+
+          const sanitizedMaterials = rawMaterials.map((m: any, mIdx: number) => {
+            const matOrder = m.order || mIdx + 1;
+            const matchedMat =
+              (m.id && existingMaterials.find((em: any) => em.id === m.id)) ||
+              existingMaterials.find((em: any) => em.order === matOrder) ||
+              existingMaterials[mIdx];
+
+            const finalMatTitle =
+              matchedMat && matchedMat.title && matchedMat.title.trim().length > 0
+                ? matchedMat.title.trim()
+                : (m.title || `Lingkup Materi ${matOrder}`).trim();
+
+            const finalMatId = matchedMat?.id || m.id || `mat-${Date.now()}-${unitOrder}-${matOrder}`;
+
+            const matTpIds = Array.isArray(m.linkedTpIds)
+              ? Array.from(new Set(m.linkedTpIds.filter((id: string) => tpMap.has(id))))
+              : [];
+            const matAtpIds = Array.isArray(m.linkedAtpItemIds)
+              ? Array.from(new Set(m.linkedAtpItemIds.filter((id: string) => atpMap.has(id))))
+              : [];
+
+            return {
+              id: finalMatId,
+              title: finalMatTitle,
+              order: matOrder,
+              linkedTpIds: matTpIds.length > 0 ? matTpIds : validLinkedTpIds,
+              linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : validLinkedAtpItemIds,
+            };
+          });
+
+          // If existing had materials that AI omitted, re-add them to preserve teacher work
+          existingMaterials.forEach((em: any) => {
+            if (!sanitizedMaterials.some((sm: any) => sm.id === em.id || sm.title === em.title)) {
+              sanitizedMaterials.push({
+                id: em.id || `mat-${Date.now()}-${unitOrder}-${sanitizedMaterials.length + 1}`,
+                title: em.title,
+                order: sanitizedMaterials.length + 1,
+                linkedTpIds: (em.linkedTpIds || []).filter((id: string) => tpMap.has(id)),
+                linkedAtpItemIds: (em.linkedAtpItemIds || []).filter((id: string) => atpMap.has(id)),
+              });
+            }
+          });
+
+          sanitizedMaterials.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+          return {
+            id: finalUnitId,
+            title: finalTitle,
+            order: unitOrder,
+            linkedTpIds: validLinkedTpIds,
+            linkedAtpItemIds: validLinkedAtpItemIds,
+            materials: sanitizedMaterials,
+          };
+        });
+
+        // If existingMapping had extra teacher units that AI omitted, preserve them
+        if (existingMapping && Array.isArray(existingMapping.units)) {
+          existingMapping.units.forEach((eu: any) => {
+            if (!sanitizedUnits.some((su: any) => su.id === eu.id || su.title === eu.title)) {
+              sanitizedUnits.push({
+                id: eu.id || `unit-${Date.now()}-${sanitizedUnits.length + 1}`,
+                title: eu.title,
+                order: sanitizedUnits.length + 1,
+                linkedTpIds: (eu.linkedTpIds || []).filter((id: string) => tpMap.has(id)),
+                linkedAtpItemIds: (eu.linkedAtpItemIds || []).filter((id: string) => atpMap.has(id)),
+                materials: Array.isArray(eu.materials) ? eu.materials : [],
+              });
+            }
+          });
+        }
+
+        sanitizedUnits.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+        const canonicalResult = {
+          id: existingMapping?.id || `aum-${Date.now()}`,
+          academicSettingId: existingMapping?.academicSettingId || academicSettingId,
+          atpId: atpData?.id || '',
+          tpDataId: tpData?.id || '',
+          units: sanitizedUnits,
+          updatedAt: new Date().toISOString(),
+        };
+
+        return res.json({
+          success: true,
+          data: canonicalResult,
+          engine: 'gemini',
+        });
+      }
+    } catch (error: any) {
+      console.warn('Gemini Canonical ATP Unit Mapping failed, falling back to pedagogical engine:', error);
+    }
+  }
+
+  // Fallback: Pedagogical Rule-Based Clustering Engine
+  const fallbackResult = fallbackGenerateCanonicalATPUnitMapping({
+    academicSettingId,
+    subject,
+    grade,
+    phase,
+    tpData,
+    atpData,
+    cpAnalysisData,
+    existingMapping,
+    targetUnitCount: count,
+    targetMaterialCountPerUnit,
+  });
+
+  return res.json({
+    success: true,
+    data: fallbackResult,
+    engine: 'pedagogical_engine',
+  });
 });
 
 // 4. Endpoint: AI Refine / Polish any custom text

@@ -420,4 +420,328 @@ export function fallbackGenerateATPMapping(params: FallbackATPMappingParams) {
   };
 }
 
+export interface FallbackCanonicalUnitMappingParams {
+  academicSettingId?: string;
+  subject?: string;
+  grade?: string;
+  phase?: string;
+  tpData: {
+    id?: string;
+    items: Array<{
+      id: string;
+      code?: string;
+      elementName?: string;
+      statement: string;
+      competence?: string;
+      contentScope?: string;
+      cpAnalysisId?: string;
+      cpAnalysisItemIds?: string[];
+      order?: number;
+    }>;
+  };
+  atpData: {
+    id?: string;
+    items: Array<{
+      id: string;
+      stepNumber: number;
+      tpId?: string;
+      tpCode?: string;
+      tpStatement?: string;
+      unitTitle?: string;
+      materialScope?: string;
+    }>;
+  };
+  cpAnalysisData?: {
+    id?: string;
+    items?: Array<{
+      id: string;
+      elementId?: string;
+      elementName: string;
+      cpCompetence: string;
+      materialScope: string;
+      suggestedTp?: string;
+    }>;
+  };
+  existingMapping?: {
+    id?: string;
+    academicSettingId?: string;
+    atpId?: string;
+    tpDataId?: string;
+    units: Array<{
+      id: string;
+      title: string;
+      order: number;
+      linkedTpIds: string[];
+      linkedAtpItemIds: string[];
+      materials: Array<{
+        id: string;
+        title: string;
+        order: number;
+        linkedTpIds: string[];
+        linkedAtpItemIds: string[];
+      }>;
+    }>;
+  };
+  targetUnitCount?: number;
+  targetMaterialCountPerUnit?: number;
+}
+
+export function fallbackGenerateCanonicalATPUnitMapping(
+  params: FallbackCanonicalUnitMappingParams
+) {
+  const {
+    academicSettingId = '',
+    subject = 'Mata Pelajaran',
+    tpData,
+    atpData,
+    cpAnalysisData,
+    existingMapping,
+    targetUnitCount = 6,
+  } = params;
+
+  const validTpItems = Array.isArray(tpData?.items) ? tpData.items : [];
+  const tpMap = new Map<string, (typeof validTpItems)[0]>();
+  validTpItems.forEach((tp) => tpMap.set(tp.id, tp));
+
+  const validAtpItems = Array.isArray(atpData?.items)
+    ? [...atpData.items].sort((a, b) => (a.stepNumber || 0) - (b.stepNumber || 0))
+    : [];
+  const atpMap = new Map<string, (typeof validAtpItems)[0]>();
+  validAtpItems.forEach((atp) => atpMap.set(atp.id, atp));
+
+  const cpAnalysisItems = Array.isArray(cpAnalysisData?.items) ? cpAnalysisData.items : [];
+
+  // Helper to extract clean content summary from TP
+  const extractTopicFromTp = (tp?: (typeof validTpItems)[0]): string => {
+    if (!tp) return 'Materi Pembelajaran';
+    if (tp.contentScope && tp.contentScope.trim().length > 0) {
+      return tp.contentScope.trim();
+    }
+    const cleanStmt = (tp.statement || '')
+      .replace(/^(peserta didik|murid|siswa)\s+(dapat|mampu)\s+/i, '')
+      .trim();
+    return cleanStmt.length > 50 ? `${cleanStmt.substring(0, 47)}...` : cleanStmt || 'Materi Pokok';
+  };
+
+  // If existingMapping has units, preserve teacher structure and complete missing fields
+  if (existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0) {
+    const updatedUnits = existingMapping.units.map((unit, uIdx) => {
+      const order = unit.order || uIdx + 1;
+      // Filter linked IDs to valid items
+      const linkedTpIds = (unit.linkedTpIds || []).filter((id) => tpMap.has(id));
+      const linkedAtpItemIds = (unit.linkedAtpItemIds || []).filter((id) => atpMap.has(id));
+
+      // Resolve linked TPs
+      const linkedTps = linkedTpIds.map((id) => tpMap.get(id)).filter(Boolean);
+
+      let unitTitle = unit.title?.trim();
+      if (!unitTitle) {
+        const fallbackTopic = linkedTps.length > 0 ? extractTopicFromTp(linkedTps[0]) : `Bagian ${order}`;
+        unitTitle = `Bab ${order}: ${fallbackTopic}`;
+      }
+
+      // Handle materials
+      let materials = Array.isArray(unit.materials) ? [...unit.materials] : [];
+      if (materials.length > 0) {
+        materials = materials.map((mat, mIdx) => {
+          const matOrder = mat.order || mIdx + 1;
+          const matLinkedTpIds = (mat.linkedTpIds || []).filter((id) => tpMap.has(id));
+          const matLinkedAtpItemIds = (mat.linkedAtpItemIds || []).filter((id) => atpMap.has(id));
+
+          let matTitle = mat.title?.trim();
+          if (!matTitle) {
+            const topic = matLinkedTpIds.length > 0 && tpMap.get(matLinkedTpIds[0])
+              ? extractTopicFromTp(tpMap.get(matLinkedTpIds[0]))
+              : `Lingkup Materi ${matOrder}`;
+            matTitle = topic;
+          }
+
+          return {
+            id: mat.id || `mat-${Date.now()}-${uIdx + 1}-${matOrder}`,
+            title: matTitle,
+            order: matOrder,
+            linkedTpIds: matLinkedTpIds.length > 0 ? matLinkedTpIds : linkedTpIds,
+            linkedAtpItemIds: matLinkedAtpItemIds.length > 0 ? matLinkedAtpItemIds : linkedAtpItemIds,
+          };
+        });
+      } else {
+        // Decompose unit into 2-3 meaningful materials based on linked TPs
+        if (linkedTps.length > 0) {
+          materials = linkedTps.map((tp, mIdx) => {
+            const matchingAtp = validAtpItems.filter((atp) => atp.tpId === tp!.id);
+            return {
+              id: `mat-${Date.now()}-${uIdx + 1}-${mIdx + 1}`,
+              title: extractTopicFromTp(tp),
+              order: mIdx + 1,
+              linkedTpIds: [tp!.id],
+              linkedAtpItemIds: matchingAtp.map((a) => a.id),
+            };
+          });
+        } else {
+          materials = [
+            {
+              id: `mat-${Date.now()}-${uIdx + 1}-1`,
+              title: `Pengenalan dan Konsep Dasar ${unitTitle.replace(/^Bab\s+\d+:\s*/i, '')}`,
+              order: 1,
+              linkedTpIds: linkedTpIds,
+              linkedAtpItemIds: linkedAtpItemIds,
+            },
+            {
+              id: `mat-${Date.now()}-${uIdx + 1}-2`,
+              title: `Penerapan dan Praktik ${unitTitle.replace(/^Bab\s+\d+:\s*/i, '')}`,
+              order: 2,
+              linkedTpIds: linkedTpIds,
+              linkedAtpItemIds: linkedAtpItemIds,
+            },
+          ];
+        }
+      }
+
+      return {
+        id: unit.id || `unit-${Date.now()}-${order}`,
+        title: unitTitle,
+        order,
+        linkedTpIds,
+        linkedAtpItemIds,
+        materials,
+      };
+    });
+
+    return {
+      id: existingMapping.id || `aum-${Date.now()}`,
+      academicSettingId: existingMapping.academicSettingId || academicSettingId,
+      atpId: atpData.id || '',
+      tpDataId: tpData.id || '',
+      units: updatedUnits,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  // Initial Generation from scratch
+  const totalAtp = Math.max(1, validAtpItems.length);
+  const unitCount = Math.max(1, Math.min(20, targetUnitCount || Math.min(6, Math.max(2, Math.ceil(totalAtp / 2)))));
+
+  const units: Array<{
+    id: string;
+    title: string;
+    order: number;
+    linkedTpIds: string[];
+    linkedAtpItemIds: string[];
+    materials: Array<{
+      id: string;
+      title: string;
+      order: number;
+      linkedTpIds: string[];
+      linkedAtpItemIds: string[];
+    }>;
+  }> = [];
+
+  // Group ATP items chronologically across unitCount
+  const atpClusters: Array<(typeof validAtpItems)> = Array.from({ length: unitCount }, () => []);
+  validAtpItems.forEach((atp, idx) => {
+    const clusterIdx = Math.min(unitCount - 1, Math.floor((idx / totalAtp) * unitCount));
+    atpClusters[clusterIdx].push(atp);
+  });
+
+  atpClusters.forEach((cluster, cIdx) => {
+    const unitOrder = cIdx + 1;
+    const unitId = `unit-${Date.now()}-${unitOrder}`;
+    const linkedAtpItemIds = cluster.map((a) => a.id);
+    const linkedTpIdsSet = new Set<string>();
+    cluster.forEach((a) => {
+      if (a.tpId && tpMap.has(a.tpId)) {
+        linkedTpIdsSet.add(a.tpId);
+      }
+    });
+    const linkedTpIds = Array.from(linkedTpIdsSet);
+    const linkedTps = linkedTpIds.map((id) => tpMap.get(id)).filter(Boolean);
+
+    // Determine representative Bab title
+    let mainTopic = '';
+    if (linkedTps.length > 0) {
+      const scopes = linkedTps.map((t) => t?.contentScope?.trim()).filter(Boolean);
+      if (scopes.length > 0) {
+        mainTopic = scopes[0]!;
+      } else {
+        mainTopic = extractTopicFromTp(linkedTps[0]);
+      }
+    } else {
+      mainTopic = `Materi Pembelajaran Bagian ${unitOrder}`;
+    }
+
+    const unitTitle = `Bab ${unitOrder}: ${mainTopic.replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '')}`;
+
+    // Decompose into multiple meaningful materials (2 to 4 materials per Bab)
+    const materials: Array<{
+      id: string;
+      title: string;
+      order: number;
+      linkedTpIds: string[];
+      linkedAtpItemIds: string[];
+    }> = [];
+
+    if (linkedTps.length > 0) {
+      linkedTps.forEach((tp, mIdx) => {
+        const matchingAtps = cluster.filter((a) => a.tpId === tp!.id).map((a) => a.id);
+        materials.push({
+          id: `mat-${Date.now()}-${unitOrder}-${mIdx + 1}`,
+          title: extractTopicFromTp(tp),
+          order: mIdx + 1,
+          linkedTpIds: [tp!.id],
+          linkedAtpItemIds: matchingAtps.length > 0 ? matchingAtps : linkedAtpItemIds,
+        });
+      });
+    }
+
+    // Ensure at least 2 decomposed materials per Bab
+    if (materials.length === 1) {
+      const baseTitle = materials[0].title;
+      materials[0].title = `Konsep dan Pemahaman ${baseTitle}`;
+      materials.push({
+        id: `mat-${Date.now()}-${unitOrder}-2`,
+        title: `Aplikasi dan Eksplorasi ${baseTitle}`,
+        order: 2,
+        linkedTpIds: materials[0].linkedTpIds,
+        linkedAtpItemIds: materials[0].linkedAtpItemIds,
+      });
+    } else if (materials.length === 0) {
+      materials.push(
+        {
+          id: `mat-${Date.now()}-${unitOrder}-1`,
+          title: `Pengenalan Konsep ${mainTopic}`,
+          order: 1,
+          linkedTpIds: [],
+          linkedAtpItemIds: linkedAtpItemIds,
+        },
+        {
+          id: `mat-${Date.now()}-${unitOrder}-2`,
+          title: `Penerapan Praktik ${mainTopic}`,
+          order: 2,
+          linkedTpIds: [],
+          linkedAtpItemIds: linkedAtpItemIds,
+        }
+      );
+    }
+
+    units.push({
+      id: unitId,
+      title: unitTitle,
+      order: unitOrder,
+      linkedTpIds,
+      linkedAtpItemIds,
+      materials,
+    });
+  });
+
+  return {
+    id: `aum-${Date.now()}`,
+    academicSettingId,
+    atpId: atpData.id || '',
+    tpDataId: tpData.id || '',
+    units,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+
 
