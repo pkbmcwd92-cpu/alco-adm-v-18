@@ -24,6 +24,7 @@ import {
   calculateTeacherWorkload,
   PREDEFINED_ADDITIONAL_DUTIES,
 } from './teacherWorkloadEngine';
+import { loadStorageV5 } from './storageV5';
 import {
   ALL_CURRICULUM_STRUCTURE_RULES,
   resolveCurriculumContext,
@@ -1605,3 +1606,20 @@ export function resolveSemesterCapacityV5(
     isReady,
   };
 }
+
+/**
+ * Convenience helper to resolve semester capacity for an explicit semesterPlanId
+ * directly from V5 persistent storage without requiring activeSemesterPlan.
+ */
+export function getSemesterCapacityV5(
+  semesterPlanId: string,
+  override?: {
+    calendar?: AcademicCalendar;
+    calendarDays?: CalendarDay[];
+    semesterJPSetting?: SemesterJPSetting;
+  }
+): SemesterCapacityInfo {
+  const state = loadStorageV5();
+  return resolveSemesterCapacityV5(semesterPlanId, state, override);
+}
+

@@ -1470,6 +1470,40 @@ export function saveTimeAllocationV5(
   return value;
 }
 
+/**
+ * Saves a planning bundle (AcademicCalendar, SemesterJPSetting, TimeAllocation)
+ * directly for an explicit semesterPlanId without requiring setActiveSemesterPlanV5.
+ */
+export function saveSemesterPlanningBundleV5(
+  semesterPlanId: string,
+  params: {
+    calendar?: SemesterCalendarEntry;
+    semesterJPSetting?: SemesterJPSetting;
+    timeAllocation?: TimeAllocation[];
+  }
+): void {
+  const state = loadStorageV5();
+  assertSemesterPlanAndParentExist(state, semesterPlanId);
+
+  if (params.calendar !== undefined) {
+    upsertSemesterScopedEntry(state.semesterData.academicCalendar, semesterPlanId, params.calendar);
+  }
+  if (params.semesterJPSetting !== undefined) {
+    if (params.semesterJPSetting.semesterPlanId !== semesterPlanId) {
+      params.semesterJPSetting = {
+        ...params.semesterJPSetting,
+        semesterPlanId,
+      };
+    }
+    upsertSemesterScopedEntry(state.semesterJPSettings, semesterPlanId, params.semesterJPSetting);
+  }
+  if (params.timeAllocation !== undefined) {
+    upsertSemesterScopedEntry(state.semesterData.timeAllocation, semesterPlanId, params.timeAllocation);
+  }
+
+  saveStorageV5(state);
+}
+
 export function saveLearningPlansV5(
   semesterPlanId: string,
   value: LearningPlan[]

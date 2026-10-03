@@ -687,7 +687,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
           onClick={handleSaveAndNext}
           className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-950 text-white py-2.5 px-6 rounded-xl text-sm font-semibold shadow-sm transition cursor-pointer"
         >
-          <span>Lanjut ke Administrasi & Ekspor Dokumen (07)</span>
+          <span>Lanjut ke Pemetaan Unit/Bab (07)</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -79,6 +79,7 @@ import { CPManager } from './components/CPManager';
 import { CPAnalysisManager } from './components/CPAnalysisManager';
 import { TPManager } from './components/TPManager';
 import { ATPManager } from './components/ATPManager';
+import { ATPUnitMappingManager } from './components/ATPUnitMappingManager';
 import { SemesterSelector } from './components/SemesterSelector';
 import { K13Manager } from './components/administration/K13Manager';
 import { AdministrationHub } from './components/administration/AdministrationHub';
@@ -731,12 +732,22 @@ export function App() {
   // Handlers for Interconnected Administration Modules (Transitional)
   const handleSaveCalendar = (
     cal: AcademicCalendar,
-    days: CalendarDay[]
+    days: CalendarDay[],
+    explicitSemesterPlanId?: string
   ) => {
-    if (!activeSemesterPlan || !activeYearPlan) {
+    const targetSemesterPlanId = explicitSemesterPlanId || activeSemesterPlan?.id;
+    const targetSemesterPlan = targetSemesterPlanId
+      ? v5State.semesterPlans.find((sp) => sp.id === targetSemesterPlanId)
+      : activeSemesterPlan;
+
+    const targetYearPlan = targetSemesterPlan
+      ? v5State.yearPlans.find((yp) => yp.id === targetSemesterPlan.yearPlanId) || activeYearPlan
+      : activeYearPlan;
+
+    if (!targetSemesterPlan || !targetYearPlan) {
       setAppNotice({
         type: 'error',
-        message: 'Pilih Semester aktif terlebih dahulu sebelum menyimpan kalender.',
+        message: 'Pilih Semester aktif atau tentukan target semester yang valid sebelum menyimpan kalender.',
       });
       return;
     }
@@ -744,10 +755,10 @@ export function App() {
     try {
       const canonicalCalendar: AcademicCalendar = {
         ...cal,
-        id: cal.id && cal.id.trim() ? cal.id : `cal-${activeSemesterPlan.id}`,
-        academicSettingId: activeSemesterPlan.id,
-        academicYear: activeYearPlan.academicYear,
-        semester: activeSemesterPlan.semester === 1 ? '1 (Ganjil)' : '2 (Genap)',
+        id: cal.id && cal.id.trim() ? cal.id : `cal-${targetSemesterPlan.id}`,
+        academicSettingId: targetSemesterPlan.id,
+        academicYear: targetYearPlan.academicYear,
+        semester: targetSemesterPlan.semester === 1 ? '1 (Ganjil)' : '2 (Genap)',
         workflowStatus: 'CONFIRMED',
       };
 
@@ -756,7 +767,7 @@ export function App() {
         academicCalendarId: canonicalCalendar.id,
       }));
 
-      saveAcademicCalendarV5(activeSemesterPlan.id, {
+      saveAcademicCalendarV5(targetSemesterPlan.id, {
         calendar: canonicalCalendar,
         days: canonicalDays,
       });
@@ -770,11 +781,19 @@ export function App() {
     }
   };
 
-  const handleSaveSemesterJPSetting = (actualWeeklyJP: number | null) => {
-    if (!activeSemesterPlan) {
+  const handleSaveSemesterJPSetting = (
+    actualWeeklyJP: number | null,
+    explicitSemesterPlanId?: string
+  ) => {
+    const targetSemesterPlanId = explicitSemesterPlanId || activeSemesterPlan?.id;
+    const targetSemesterPlan = targetSemesterPlanId
+      ? v5State.semesterPlans.find((sp) => sp.id === targetSemesterPlanId)
+      : activeSemesterPlan;
+
+    if (!targetSemesterPlan) {
       setAppNotice({
         type: 'error',
-        message: 'Pilih Semester aktif terlebih dahulu sebelum menyimpan JP aktual.',
+        message: 'Pilih Semester aktif atau tentukan target semester sebelum menyimpan JP aktual.',
       });
       return;
     }
@@ -784,12 +803,12 @@ export function App() {
         typeof actualWeeklyJP === 'number' && Number.isFinite(actualWeeklyJP) && actualWeeklyJP > 0;
 
       const semesterJPSetting: SemesterJPSetting = {
-        semesterPlanId: activeSemesterPlan.id,
+        semesterPlanId: targetSemesterPlan.id,
         actualScheduledWeeklyJP: isJPProvided ? actualWeeklyJP : null,
         source: isJPProvided ? 'TEACHER_CONFIRMED' : 'UNRESOLVED',
       };
 
-      saveSemesterJPSettingV5(activeSemesterPlan.id, semesterJPSetting);
+      saveSemesterJPSettingV5(targetSemesterPlan.id, semesterJPSetting);
       refreshV5();
     } catch (err: any) {
       setAppNotice({
@@ -799,17 +818,25 @@ export function App() {
     }
   };
 
-  const handleSaveTimeAllocations = (allocations: TimeAllocation[]) => {
-    if (!activeSemesterPlan) {
+  const handleSaveTimeAllocations = (
+    allocations: TimeAllocation[],
+    explicitSemesterPlanId?: string
+  ) => {
+    const targetSemesterPlanId = explicitSemesterPlanId || activeSemesterPlan?.id;
+    const targetSemesterPlan = targetSemesterPlanId
+      ? v5State.semesterPlans.find((sp) => sp.id === targetSemesterPlanId)
+      : activeSemesterPlan;
+
+    if (!targetSemesterPlan) {
       setAppNotice({
         type: 'error',
-        message: 'Pilih Semester aktif terlebih dahulu sebelum menyimpan alokasi waktu.',
+        message: 'Pilih Semester aktif atau tentukan target semester sebelum menyimpan alokasi waktu.',
       });
       return;
     }
 
     try {
-      saveTimeAllocationV5(activeSemesterPlan.id, allocations);
+      saveTimeAllocationV5(targetSemesterPlan.id, allocations);
       refreshV5();
     } catch (err: any) {
       setAppNotice({
@@ -1335,8 +1362,18 @@ export function App() {
               academicSetting={transitionalAcademicSetting}
               profile={activeProfile}
               onSaveATP={handleSaveATP}
-              onNextStep={() => setCurrentStep('semester')}
+              onNextStep={() => setCurrentStep('atp-mapping')}
               onBackToTP={() => setCurrentStep('tp')}
+            />
+          )}
+
+          {currentStep === 'atp-mapping' && (
+            <ATPUnitMappingManager
+              atp={activeATP}
+              tp={activeTP}
+              onSaveATP={handleSaveATP}
+              onNextStep={() => setCurrentStep('semester')}
+              onBackToATP={() => setCurrentStep('atp')}
             />
           )}
 
@@ -1346,7 +1383,7 @@ export function App() {
               activeSemesterPlan={activeSemesterPlan}
               onSelectSemester={handleSelectSemester}
               onNextStep={() => setCurrentStep('admin')}
-              onBackToATP={() => setCurrentStep('atp')}
+              onBackToATP={() => setCurrentStep('atp-mapping')}
             />
           )}
 

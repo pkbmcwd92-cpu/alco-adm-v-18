@@ -250,6 +250,7 @@ export function validateWorkflowDependencies(
     'cp-analysis': { id: 'cp-analysis', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     tp: { id: 'tp', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     atp: { id: 'atp', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
+    'atp-mapping': { id: 'atp-mapping', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     semester: { id: 'semester', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     'k13-kd': { id: 'k13-kd', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     'k13-indikator': { id: 'k13-indikator', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
@@ -609,6 +610,25 @@ export function validateWorkflowDependencies(
       hasOrphans: hasOrphanCriterion,
     };
 
+    // 5b. Pemetaan Unit/Bab step state
+    const hasMappedUnit = isATPComplete && atpItems.some((item) => item.unitTitle && item.unitTitle.trim().length > 0);
+    stepStates['atp-mapping'] = {
+      id: 'atp-mapping',
+      status: isATPBlocked
+        ? 'BLOCKED'
+        : isATPStale
+        ? 'STALE'
+        : hasMappedUnit
+        ? 'COMPLETE'
+        : isATPComplete
+        ? 'READY'
+        : 'BLOCKED',
+      isBlocked: !isATPComplete,
+      isComplete: hasMappedUnit,
+      isStale: isATPStale,
+      reason: !isATPComplete ? 'Memerlukan penyusunan Alur Tujuan Pembelajaran (ATP) terlebih dahulu' : undefined,
+    };
+
     // 6. Semester Selection step state
     stepStates.semester = {
       id: 'semester',
@@ -638,6 +658,8 @@ export function validateWorkflowDependencies(
     stepStates.tp.status = 'BLOCKED';
     stepStates.atp.isBlocked = true;
     stepStates.atp.status = 'BLOCKED';
+    stepStates['atp-mapping'].isBlocked = true;
+    stepStates['atp-mapping'].status = 'BLOCKED';
     stepStates.semester.isBlocked = true;
     stepStates.semester.status = 'BLOCKED';
     stepStates['k13-kd'].isBlocked = true;
