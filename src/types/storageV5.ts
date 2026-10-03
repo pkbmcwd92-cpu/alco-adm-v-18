@@ -11,6 +11,7 @@ import {
   CPAnalysisData,
   TPData,
   ATPData,
+  ATPUnitMappingData,
   AcademicCalendar,
   CalendarDay,
   TimeAllocation,
@@ -72,6 +73,7 @@ export interface AnnualDataStoreV5 {
   cpAnalysis: YearScopedEntry<CPAnalysisData>[];
   tp: YearScopedEntry<TPData>[];
   atp: YearScopedEntry<ATPData>[];
+  atpUnitMappings?: YearScopedEntry<ATPUnitMappingData>[];
   curriculumContext: YearScopedEntry<CurriculumContextLock>[];
 }
 

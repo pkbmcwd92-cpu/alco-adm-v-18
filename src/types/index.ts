@@ -438,6 +438,32 @@ export interface ATPData {
   updatedAt: string;
 }
 
+export interface ATPUnitMaterial {
+  id: string;
+  title: string;
+  order: number;
+  linkedTpIds: string[];
+  linkedAtpItemIds: string[];
+}
+
+export interface ATPUnitMapping {
+  id: string;
+  title: string;
+  order: number;
+  linkedTpIds: string[];
+  linkedAtpItemIds: string[];
+  materials: ATPUnitMaterial[];
+}
+
+export interface ATPUnitMappingData {
+  id: string;
+  academicSettingId: string;
+  atpId: string;
+  tpDataId?: string;
+  units: ATPUnitMapping[];
+  updatedAt: string;
+}
+
 export type DocumentType =
   | 'CP'
   | 'ANALISIS_CP_TP'

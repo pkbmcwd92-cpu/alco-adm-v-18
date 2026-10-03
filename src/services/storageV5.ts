@@ -20,6 +20,7 @@ import {
   CPAnalysisData,
   TPData,
   ATPData,
+  ATPUnitMappingData,
   CurriculumContextLock,
   AnnualJPReference,
   SemesterJPSetting,
@@ -41,6 +42,7 @@ export interface AnnualDataV5Result {
   cpAnalysis: CPAnalysisData | undefined;
   tp: TPData | undefined;
   atp: ATPData | undefined;
+  atpUnitMapping: ATPUnitMappingData | undefined;
   curriculumContext: CurriculumContextLock | undefined;
   annualJPReference: AnnualJPReference | undefined;
 }
@@ -102,6 +104,7 @@ export function createInitialStorageV5(): AppStorageStateV5 {
       cpAnalysis: [],
       tp: [],
       atp: [],
+      atpUnitMappings: [],
       curriculumContext: [],
     },
     semesterData: {
@@ -188,6 +191,10 @@ export function validateStorageStateV5(value: unknown): AppStorageStateV5 {
   assertArray(annualData, 'cpAnalysis', 'data.annualData');
   assertArray(annualData, 'tp', 'data.annualData');
   assertArray(annualData, 'atp', 'data.annualData');
+  if (annualData.atpUnitMappings === undefined) {
+    annualData.atpUnitMappings = [];
+  }
+  assertArray(annualData, 'atpUnitMappings', 'data.annualData');
   assertArray(annualData, 'curriculumContext', 'data.annualData');
 
   // Validate semesterData structure & collections
@@ -531,6 +538,12 @@ export function validateStorageStateV5(value: unknown): AppStorageStateV5 {
     annualData.atp as Array<Record<string, unknown>>,
     'annualData.atp'
   );
+  if (Array.isArray(annualData.atpUnitMappings)) {
+    validateYearScopedCollection(
+      annualData.atpUnitMappings as Array<Record<string, unknown>>,
+      'annualData.atpUnitMappings'
+    );
+  }
   validateYearScopedCollection(
     annualData.curriculumContext as Array<Record<string, unknown>>,
     'annualData.curriculumContext'
@@ -1180,6 +1193,9 @@ export function getAnnualDataV5(yearPlanId: string): AnnualDataV5Result {
   const cpAnalysis = state.annualData.cpAnalysis.find((e) => e.yearPlanId === yearPlanId)?.value;
   const tp = state.annualData.tp.find((e) => e.yearPlanId === yearPlanId)?.value;
   const atp = state.annualData.atp.find((e) => e.yearPlanId === yearPlanId)?.value;
+  const atpUnitMapping = (state.annualData.atpUnitMappings || []).find(
+    (e) => e.yearPlanId === yearPlanId
+  )?.value;
   const curriculumContext = state.annualData.curriculumContext.find(
     (e) => e.yearPlanId === yearPlanId
   )?.value;
@@ -1193,9 +1209,16 @@ export function getAnnualDataV5(yearPlanId: string): AnnualDataV5Result {
     cpAnalysis,
     tp,
     atp,
+    atpUnitMapping,
     curriculumContext,
     annualJPReference,
   };
+}
+
+export function getATPUnitMappingV5(yearPlanId: string): ATPUnitMappingData | undefined {
+  const state = loadStorageV5();
+  assertYearPlanExists(state, yearPlanId);
+  return (state.annualData.atpUnitMappings || []).find((e) => e.yearPlanId === yearPlanId)?.value;
 }
 
 export function saveCPV5(yearPlanId: string, value: CPData): CPData {
@@ -1226,6 +1249,20 @@ export function saveATPV5(yearPlanId: string, value: ATPData): ATPData {
   const state = loadStorageV5();
   assertYearPlanExists(state, yearPlanId);
   upsertAnnualScopedEntry(state.annualData.atp, yearPlanId, value);
+  saveStorageV5(state);
+  return value;
+}
+
+export function saveATPUnitMappingV5(
+  yearPlanId: string,
+  value: ATPUnitMappingData
+): ATPUnitMappingData {
+  const state = loadStorageV5();
+  assertYearPlanExists(state, yearPlanId);
+  if (!state.annualData.atpUnitMappings) {
+    state.annualData.atpUnitMappings = [];
+  }
+  upsertAnnualScopedEntry(state.annualData.atpUnitMappings, yearPlanId, value);
   saveStorageV5(state);
   return value;
 }
@@ -1283,6 +1320,16 @@ export function deleteATPV5(yearPlanId: string): void {
   const state = loadStorageV5();
   assertYearPlanExists(state, yearPlanId);
   const changed = deleteAnnualScopedEntry(state.annualData.atp, yearPlanId);
+  if (changed) {
+    saveStorageV5(state);
+  }
+}
+
+export function deleteATPUnitMappingV5(yearPlanId: string): void {
+  const state = loadStorageV5();
+  assertYearPlanExists(state, yearPlanId);
+  if (!state.annualData.atpUnitMappings) return;
+  const changed = deleteAnnualScopedEntry(state.annualData.atpUnitMappings, yearPlanId);
   if (changed) {
     saveStorageV5(state);
   }
@@ -2159,6 +2206,9 @@ function performDeleteYearHierarchyInState(
   state.annualData.cpAnalysis = state.annualData.cpAnalysis.filter((e) => e.yearPlanId !== targetYearPlanId);
   state.annualData.tp = state.annualData.tp.filter((e) => e.yearPlanId !== targetYearPlanId);
   state.annualData.atp = state.annualData.atp.filter((e) => e.yearPlanId !== targetYearPlanId);
+  if (Array.isArray(state.annualData.atpUnitMappings)) {
+    state.annualData.atpUnitMappings = state.annualData.atpUnitMappings.filter((e) => e.yearPlanId !== targetYearPlanId);
+  }
   state.annualData.curriculumContext = state.annualData.curriculumContext.filter((e) => e.yearPlanId !== targetYearPlanId);
 
   // 3. Semester cascade removal (authority: entry.semesterPlanId)
