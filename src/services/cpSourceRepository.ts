@@ -20,75 +20,189 @@ export interface CPSourceSearchResult {
   confidenceScore: number;
 }
 
-function matchesSubject(target: string, item: string): { matches: boolean; score: number } {
-  const t = target.trim().toLowerCase();
-  const i = item.trim().toLowerCase();
+const ALIAS_CLUSTERS: string[][] = [
+  // PJOK
+  ['pjok', 'pendidikan jasmani olahraga dan kesehatan', 'pendidikan jasmani olahraga & kesehatan', 'pendidikan jasmani dan olahraga', 'pendidikan jasmani', 'penjas', 'penjasorkes', 'olahraga', 'kesehatan'],
+  // Bahasa Indonesia
+  ['bahasa indonesia', 'b indonesia', 'b indo', 'bindo', 'indonesia'],
+  // Bahasa Inggris
+  ['bahasa inggris', 'b inggris', 'b ing', 'binggris', 'english'],
+  // IPAS
+  ['ipas', 'ilmu pengetahuan alam dan sosial', 'ilmu pengetahuan alam & sosial', 'ipa dan ips', 'ipa & ips'],
+  // IPA
+  ['ipa', 'ilmu pengetahuan alam', 'sains', 'natural science', 'biologi dan fisika'],
+  // IPS
+  ['ips', 'ilmu pengetahuan sosial', 'social science', 'sosial'],
+  // Matematika
+  ['matematika', 'mtk', 'math', 'mathematics', 'matematik', 'berhitung'],
+  // Pendidikan Pancasila
+  ['pendidikan pancasila', 'pancasila', 'ppkn', 'pkn', 'pendidikan kewarganegaraan', 'kewarganegaraan'],
+  // Informatika
+  ['informatika', 'tik', 'teknologi informasi dan komunikasi', 'komputer', 'teknologi informasi', 'koding', 'coding', 'ilmu komputer'],
+  // Seni Budaya & Rupa/Musik/Tari/Teater
+  ['seni budaya', 'seni rupa', 'seni musik', 'seni tari', 'seni teater', 'seni dan prakarya', 'seni budaya dan prakarya', 'sbkp', 'seni'],
+  // Prakarya & Kewirausahaan
+  ['prakarya', 'kewirausahaan', 'prakarya dan kewirausahaan', 'pkwu', 'kerajinan'],
+  // PAI & Budi Pekerti
+  ['pendidikan agama islam dan budi pekerti', 'pendidikan agama islam', 'pai', 'agama islam', 'pabp', 'budi pekerti'],
+  // Pendidikan Agama Kristen
+  ['pendidikan agama kristen dan budi pekerti', 'pendidikan agama kristen', 'pak', 'agama kristen'],
+  // Pendidikan Agama Katolik
+  ['pendidikan agama katolik dan budi pekerti', 'pendidikan agama katolik', 'agama katolik'],
+  // Sejarah
+  ['sejarah', 'sejarah indonesia', 'history'],
+  // Geografi, Sosiologi, Ekonomi, Fisika, Kimia, Biologi
+  ['geografi'],
+  ['sosiologi'],
+  ['ekonomi', 'akuntansi'],
+  ['fisika'],
+  ['kimia'],
+  ['biologi'],
+  // Bahasa Daerah / Muatan Lokal
+  ['muatan lokal', 'mulok', 'bahasa daerah', 'bahasa jawa', 'bahasa sunda', 'bahasa bali'],
+];
 
-  if (!t || !i) {
-    return { matches: false, score: 0 };
-  }
+const STOP_WORDS = new Set([
+  'dan',
+  'atau',
+  'di',
+  'ke',
+  'dari',
+  'pada',
+  'untuk',
+  'dengan',
+  'mata',
+  'pelajaran',
+  'mapel',
+  'bidang',
+  'studi',
+  'fase',
+  'kelas',
+  'kurikulum',
+  'wajib',
+  'pilihan',
+  'sd',
+  'smp',
+  'sma',
+  'smk',
+]);
 
-  // Exact match
-  if (t === i) {
-    return { matches: true, score: 50 };
-  }
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  // PJOK aliases
-  const isTargetPJOK = t.includes('pjok') || t.includes('jasmani') || t.includes('penjas');
-  const isItemPJOK = i.includes('pjok') || i.includes('jasmani') || i.includes('penjas');
-  if (isTargetPJOK || isItemPJOK) {
-    if (isTargetPJOK && isItemPJOK) {
-      return { matches: true, score: 45 };
+function extractTokens(normalized: string): string[] {
+  return normalized
+    .split(' ')
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+}
+
+function diceCoefficient(a: string, b: string): number {
+  const cleanA = a.replace(/\s+/g, '');
+  const cleanB = b.replace(/\s+/g, '');
+  if (!cleanA || !cleanB) return 0;
+  if (cleanA === cleanB) return 1;
+  if (cleanA.length < 2 || cleanB.length < 2) return 0;
+
+  const getBigrams = (str: string): Map<string, number> => {
+    const bigrams = new Map<string, number>();
+    for (let i = 0; i < str.length - 1; i++) {
+      const bg = str.slice(i, i + 2);
+      bigrams.set(bg, (bigrams.get(bg) || 0) + 1);
     }
-    return { matches: false, score: 0 };
-  }
+    return bigrams;
+  };
 
-  // Bahasa Indonesia aliases
-  const isTargetBI = t.includes('bahasa indonesia') || t.includes('b. indonesia') || t.includes('b.indo');
-  const isItemBI = i.includes('bahasa indonesia') || i.includes('b. indonesia') || i.includes('b.indo');
-  if (isTargetBI || isItemBI) {
-    if (isTargetBI && isItemBI) {
-      return { matches: true, score: 45 };
+  const bigramsA = getBigrams(cleanA);
+  const bigramsB = getBigrams(cleanB);
+
+  let intersection = 0;
+  for (const [bg, countA] of bigramsA.entries()) {
+    if (bigramsB.has(bg)) {
+      intersection += Math.min(countA, bigramsB.get(bg)!);
     }
-    return { matches: false, score: 0 };
   }
 
-  // IPAS aliases
-  const isTargetIPAS = t.includes('ipas') || t.includes('ilmu pengetahuan alam dan sosial') || t.includes('ilmu pengetahuan alam & sosial');
-  const isItemIPAS = i.includes('ipas') || i.includes('ilmu pengetahuan alam dan sosial') || i.includes('ilmu pengetahuan alam & sosial');
-  if (isTargetIPAS || isItemIPAS) {
-    if (isTargetIPAS && isItemIPAS) {
-      return { matches: true, score: 45 };
+  const total = (cleanA.length - 1) + (cleanB.length - 1);
+  return total > 0 ? (2 * intersection) / total : 0;
+}
+
+function computeSubjectRelevance(target: string, candidate: string): number {
+  const normTarget = normalizeText(target);
+  const normCandidate = normalizeText(candidate);
+
+  if (!normTarget || !normCandidate) {
+    return 0;
+  }
+
+  // 1. Exact match (highest score: 60)
+  if (normTarget === normCandidate) {
+    return 60;
+  }
+
+  // 2. Known alias clusters match (score: 55)
+  for (const cluster of ALIAS_CLUSTERS) {
+    const targetInCluster = cluster.some(
+      (alias) => normTarget === alias || normTarget.includes(alias) || alias.includes(normTarget)
+    );
+    const candidateInCluster = cluster.some(
+      (alias) => normCandidate === alias || normCandidate.includes(alias) || alias.includes(normCandidate)
+    );
+
+    if (targetInCluster && candidateInCluster) {
+      return 55;
     }
-    return { matches: false, score: 0 };
   }
 
-  // Matematika aliases
-  const isTargetMat = t.includes('matematika') || t.includes('mtk') || t === 'math';
-  const isItemMat = i.includes('matematika') || i.includes('mtk');
-  if (isTargetMat || isItemMat) {
-    if (isTargetMat && isItemMat) {
-      return { matches: true, score: 45 };
+  // 3. Substring match (score: 45)
+  if (
+    normTarget.length >= 3 &&
+    normCandidate.length >= 3 &&
+    (normCandidate.includes(normTarget) || normTarget.includes(normCandidate))
+  ) {
+    return 45;
+  }
+
+  // 4. Token overlap matching (score: 25 - 40)
+  const targetTokens = extractTokens(normTarget);
+  const candidateTokens = extractTokens(normCandidate);
+
+  if (targetTokens.length > 0 && candidateTokens.length > 0) {
+    let matchedTokenCount = 0;
+    for (const tToken of targetTokens) {
+      const hasMatch = candidateTokens.some(
+        (cToken) =>
+          cToken === tToken ||
+          (tToken.length >= 4 && cToken.startsWith(tToken)) ||
+          (cToken.length >= 4 && tToken.startsWith(cToken))
+      );
+      if (hasMatch) {
+        matchedTokenCount++;
+      }
     }
-    return { matches: false, score: 0 };
-  }
 
-  // Pendidikan Pancasila aliases
-  const isTargetPancasila = t.includes('pancasila') || t.includes('ppkn') || t.includes('pkn');
-  const isItemPancasila = i.includes('pancasila') || i.includes('ppkn') || i.includes('pkn');
-  if (isTargetPancasila || isItemPancasila) {
-    if (isTargetPancasila && isItemPancasila) {
-      return { matches: true, score: 45 };
+    if (matchedTokenCount > 0) {
+      const matchRatio = matchedTokenCount / Math.max(targetTokens.length, candidateTokens.length);
+      return Math.round(25 + 15 * matchRatio);
     }
-    return { matches: false, score: 0 };
   }
 
-  // Substring match for other subjects (minimum 3 characters to avoid trivial substring collisions)
-  if (t.length >= 3 && (i.includes(t) || t.includes(i))) {
-    return { matches: true, score: 35 };
+  // 5. String similarity / fuzzy tolerance (score: 20 - 35)
+  const similarity = diceCoefficient(normTarget, normCandidate);
+  if (similarity >= 0.75) {
+    return 35;
+  }
+  if (similarity >= 0.6) {
+    return 25;
   }
 
-  return { matches: false, score: 0 };
+  // Unrelated subject
+  return 0;
 }
 
 /**
@@ -100,12 +214,13 @@ class CPSourceRepository {
   private registry: CPSamplePreset[] = [...CP_PRESETS];
 
   /**
-   * Search available CP entries by ActiveContext
-   * Uses subject as a HARD FILTER: candidates of other subjects are never included.
+   * Search available CP entries by ActiveContext using tolerant relevance scoring.
+   * Subject match / known aliases is the primary ranking signal.
+   * Completely unrelated subjects are filtered out by the relevance threshold.
    */
   public search(context: Partial<ActiveContext>): CPSourceSearchResult[] {
     const rawTargetSubject = context.subject || '';
-    const targetSubject = rawTargetSubject.trim().toLowerCase();
+    const targetSubject = rawTargetSubject.trim();
     if (!targetSubject) {
       return [];
     }
@@ -114,64 +229,72 @@ class CPSourceRepository {
     const targetPhase = (context.phase || '').trim().toLowerCase();
     const targetGrade = (context.grade || '').trim().toLowerCase();
 
-    const matchedResults: CPSourceSearchResult[] = [];
+    // Minimum subject relevance required so completely unrelated subjects are not included
+    const RELEVANCE_THRESHOLD = 20;
+
+    const scoredCandidates: { item: CPSamplePreset; index: number; score: number }[] = [];
 
     this.registry.forEach((item, index) => {
-      // 1. HARD FILTER on subject: only matching subjects are permitted
-      const subjectMatch = matchesSubject(targetSubject, item.subject);
-      if (!subjectMatch.matches) {
+      const subjectScore = computeSubjectRelevance(targetSubject, item.subject);
+
+      // Clearly unrelated subjects must not rank as valid results
+      // Phase/grade alone must not make an unrelated subject a match
+      if (subjectScore < RELEVANCE_THRESHOLD) {
         return;
       }
 
-      let score = subjectMatch.score;
-      const itemPhase = item.phase.toLowerCase();
-      const itemLevel = item.level.toLowerCase();
-      const itemGrade = item.grade.toLowerCase();
+      let score = subjectScore;
+      const itemPhase = (item.phase || '').toLowerCase();
+      const itemLevel = (item.level || '').toLowerCase();
+      const itemGrade = (item.grade || '').toLowerCase();
 
-      // 2. Phase match
+      // Phase match (up to +25)
       if (targetPhase && itemPhase === targetPhase) {
-        score += 30;
+        score += 25;
       } else if (targetPhase && (itemPhase.includes(targetPhase) || targetPhase.includes(itemPhase))) {
-        score += 20;
+        score += 15;
       }
 
-      // 3. Level match
+      // Level match (+15)
       if (targetLevel && itemLevel === targetLevel) {
         score += 15;
       }
 
-      // 4. Grade match
+      // Grade match (up to +10)
       if (targetGrade && itemGrade === targetGrade) {
         score += 10;
       } else if (targetGrade && (itemGrade.includes(targetGrade) || targetGrade.includes(itemGrade))) {
         score += 5;
       }
 
-      matchedResults.push({
-        id: `src-${index + 1}`,
-        subject: item.subject,
-        level: item.level,
-        grade: item.grade,
-        phase: item.phase,
-        curriculum: 'Kurikulum Merdeka',
-        title: item.sourceInfo.title,
-        institution: item.sourceInfo.institution,
-        documentYear: item.sourceInfo.documentYear || '2024/2025',
-        url: item.sourceInfo.url,
-        page: item.sourceInfo.page,
-        verificationStatus: normalizeCPVerificationStatus(item.sourceInfo.verificationStatus),
-        generalDescription: item.generalDescription,
-        elements: item.elements.map((el, elIdx) => ({
-          id: `elem-${index + 1}-${elIdx + 1}`,
-          name: el.name,
-          content: el.content,
-        })),
-        sourceMeta: item.sourceInfo,
-        confidenceScore: score,
-      });
+      scoredCandidates.push({ item, index, score });
     });
 
-    return matchedResults.sort((a, b) => b.confidenceScore - a.confidenceScore);
+    // Rank best matching candidates first
+    scoredCandidates.sort((a, b) => b.score - a.score);
+
+    return scoredCandidates.map(({ item, index, score }) => ({
+      id: `src-${index + 1}`,
+      subject: item.subject,
+      level: item.level,
+      grade: item.grade,
+      phase: item.phase,
+      curriculum: 'Kurikulum Merdeka',
+      title: item.sourceInfo.title,
+      institution: item.sourceInfo.institution,
+      documentYear: item.sourceInfo.documentYear || '2024/2025',
+      url: item.sourceInfo.url,
+      page: item.sourceInfo.page,
+      verificationStatus: normalizeCPVerificationStatus(item.sourceInfo.verificationStatus),
+      generalDescription: item.generalDescription,
+      elements: item.elements.map((el, elIdx) => ({
+        id: `elem-${index + 1}-${elIdx + 1}`,
+        name: el.name,
+        content: el.content,
+      })),
+      sourceMeta: item.sourceInfo,
+      confidenceScore: score,
+    }));
   }
 
   /**
