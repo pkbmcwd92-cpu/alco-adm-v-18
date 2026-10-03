@@ -8,16 +8,12 @@ import {
   AlertCircle,
   Sparkles,
   Layers,
-  BookOpen,
-  Tag,
   Check,
   Plus,
   Trash2,
   Loader2,
   ListPlus,
-  MoveRight,
-  HelpCircle,
-  Pencil,
+  Info,
 } from 'lucide-react';
 import { ATPData, ATPItem, TPData, AcademicSetting } from '../types';
 import { generateATPMappingWithAI, TeacherUnitConstraint } from '../services/aiService';
