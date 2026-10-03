@@ -82,6 +82,8 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   useEffect(() => {
     if (cpAnalysis?.items && cpAnalysis.items.length > 0) {
       setItems(cpAnalysis.items);
@@ -172,16 +174,7 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
     setTimeout(() => setShowSavedToast(false), 2500);
   };
 
-  const handleRunAIAnalysis = async () => {
-    if (!cp.generalDescription && (!cp.elements || cp.elements.length === 0)) {
-      alert('Capaian Pembelajaran (CP) rujukan belum diisi pada Langkah 03.');
-      return;
-    }
-
-    if (items.length > 0 && !confirm('Analisis CP sudah ada. Jalankan analisis AI baru untuk memperbarui?')) {
-      return;
-    }
-
+  const executeAIAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysisError(null);
 
@@ -246,9 +239,22 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
     }
   };
 
+  const handleRunAIAnalysis = () => {
+    if (!cp.generalDescription && (!cp.elements || cp.elements.length === 0)) {
+      setAnalysisError('Capaian Pembelajaran (CP) rujukan belum diisi pada Langkah 03.');
+      return;
+    }
+
+    if (items.length > 0) {
+      setShowConfirmModal(true);
+    } else {
+      executeAIAnalysis();
+    }
+  };
+
   const handleGenerateFromCP = () => {
     if (!cp.elements || cp.elements.length === 0) {
-      alert('Elemen CP belum tersedia. Silakan isi elemen pada tahap CP terlebih dahulu.');
+      setAnalysisError('Elemen CP belum tersedia. Silakan isi elemen pada tahap CP terlebih dahulu.');
       return;
     }
     const derived: CPAnalysisItem[] = deriveAnalysisItemsFromCP(cp);
@@ -585,6 +591,40 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Confirmation Modal for AI re-analysis */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4 border border-slate-200">
+            <div className="flex items-center gap-3 text-purple-700">
+              <Sparkles className="w-6 h-6 shrink-0 text-purple-600" />
+              <h3 className="text-base font-bold text-slate-900">Konfirmasi Analisis AI</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Analisis CP sudah berisi data. Menjalankan analisis AI baru akan memperbarui daftar kompetensi, lingkup materi, dan usulan TP secara otomatis berdasarkan CP rujukan. Apakah Anda ingin melanjutkan?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  executeAIAnalysis();
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition cursor-pointer"
+              >
+                Lanjutkan Analisis AI
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
