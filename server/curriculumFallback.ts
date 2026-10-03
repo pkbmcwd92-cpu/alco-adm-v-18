@@ -510,6 +510,24 @@ export function fallbackGenerateCanonicalATPUnitMapping(
   validAtpItems.forEach((atp) => atpMap.set(atp.id, atp));
 
   const cpAnalysisItems = Array.isArray(cpAnalysisData?.items) ? cpAnalysisData.items : [];
+  const cpaMap = new Map<string, (typeof cpAnalysisItems)[0]>();
+  cpAnalysisItems.forEach((cpa) => cpaMap.set(cpa.id, cpa));
+
+  // Indonesian stopwords for semantic keyword extraction
+  const STOPWORDS = new Set([
+    'dan', 'atau', 'pada', 'dalam', 'dengan', 'untuk', 'secara', 'yang', 'serta',
+    'dapat', 'mampu', 'peserta', 'didik', 'siswa', 'murid', 'pembelajaran', 'materi',
+    'konsep', 'memahami', 'mengidentifikasi', 'menjelaskan', 'mempraktikkan', 'menganalisis',
+    'merancang', 'melakukan', 'tentang', 'terhadap', 'sebagai', 'melalui', 'proses',
+    'tahap', 'bagian', 'berbagai', 'macam', 'jenis', 'dasar', 'awal', 'akhir', 'menggunakan'
+  ]);
+
+  const extractKeywords = (text: string): string[] => {
+    if (!text) return [];
+    const clean = text.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+    const tokens = clean.split(/\s+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+    return Array.from(new Set(tokens));
+  };
 
   // Helper to extract clean content summary from TP
   const extractTopicFromTp = (tp?: (typeof validTpItems)[0]): string => {
@@ -517,21 +535,69 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     if (tp.contentScope && tp.contentScope.trim().length > 0) {
       return tp.contentScope.trim();
     }
+    // Check linked CP analysis
+    if (tp.cpAnalysisItemIds && tp.cpAnalysisItemIds.length > 0) {
+      for (const cpaId of tp.cpAnalysisItemIds) {
+        const cpa = cpaMap.get(cpaId);
+        if (cpa && cpa.materialScope && cpa.materialScope.trim().length > 0) {
+          return cpa.materialScope.trim();
+        }
+      }
+    }
     const cleanStmt = (tp.statement || '')
       .replace(/^(peserta didik|murid|siswa)\s+(dapat|mampu)\s+/i, '')
       .trim();
-    return cleanStmt.length > 50 ? `${cleanStmt.substring(0, 47)}...` : cleanStmt || 'Materi Pokok';
+    return cleanStmt.length > 60 ? `${cleanStmt.substring(0, 57)}...` : cleanStmt || 'Materi Pembelajaran';
   };
 
-  // If existingMapping has units, preserve teacher structure and complete missing fields
+  const isCrossCuttingTp = (tp?: (typeof validTpItems)[0]): boolean => {
+    if (!tp) return false;
+    const full = `${tp.statement || ''} ${tp.contentScope || ''} ${tp.elementName || ''}`.toLowerCase();
+    return (
+      full.includes('profil pelajar pancasila') ||
+      full.includes('profil lulusan') ||
+      full.includes('karakter') ||
+      full.includes('tanggung jawab') ||
+      full.includes('refleksi') ||
+      full.includes('evaluasi diri') ||
+      full.includes('kebugaran') ||
+      full.includes('sikap') ||
+      full.includes('kolaborasi')
+    );
+  };
+
+  const areTpsSemanticallyRelated = (
+    tpA?: (typeof validTpItems)[0],
+    tpB?: (typeof validTpItems)[0]
+  ): boolean => {
+    if (!tpA || !tpB) return false;
+    if (tpA.id === tpB.id) return true;
+
+    // Cross-cutting TP can integrate with neighboring content
+    if (isCrossCuttingTp(tpA) || isCrossCuttingTp(tpB)) {
+      return true;
+    }
+
+    // Direct contentScope match
+    const scopeA = tpA.contentScope?.trim().toLowerCase();
+    const scopeB = tpB.contentScope?.trim().toLowerCase();
+    if (scopeA && scopeB && (scopeA === scopeB || scopeA.includes(scopeB) || scopeB.includes(scopeA))) {
+      return true;
+    }
+
+    // Keyword overlap on scope or statement
+    const kwA = extractKeywords(`${tpA.contentScope || ''} ${tpA.statement || ''}`);
+    const kwB = extractKeywords(`${tpB.contentScope || ''} ${tpB.statement || ''}`);
+    const overlap = kwA.filter((k) => kwB.includes(k));
+    return overlap.length >= 1;
+  };
+
+  // If existingMapping has units, strictly preserve teacher structure and only complete missing fields
   if (existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0) {
     const updatedUnits = existingMapping.units.map((unit, uIdx) => {
       const order = unit.order || uIdx + 1;
-      // Filter linked IDs to valid items
       const linkedTpIds = (unit.linkedTpIds || []).filter((id) => tpMap.has(id));
       const linkedAtpItemIds = (unit.linkedAtpItemIds || []).filter((id) => atpMap.has(id));
-
-      // Resolve linked TPs
       const linkedTps = linkedTpIds.map((id) => tpMap.get(id)).filter(Boolean);
 
       let unitTitle = unit.title?.trim();
@@ -540,7 +606,6 @@ export function fallbackGenerateCanonicalATPUnitMapping(
         unitTitle = `Bab ${order}: ${fallbackTopic}`;
       }
 
-      // Handle materials
       let materials = Array.isArray(unit.materials) ? [...unit.materials] : [];
       if (materials.length > 0) {
         materials = materials.map((mat, mIdx) => {
@@ -552,7 +617,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
           if (!matTitle) {
             const topic = matLinkedTpIds.length > 0 && tpMap.get(matLinkedTpIds[0])
               ? extractTopicFromTp(tpMap.get(matLinkedTpIds[0]))
-              : `Lingkup Materi ${matOrder}`;
+              : (linkedTps[mIdx] ? extractTopicFromTp(linkedTps[mIdx]) : `Lingkup Materi ${matOrder}`);
             matTitle = topic;
           }
 
@@ -565,31 +630,35 @@ export function fallbackGenerateCanonicalATPUnitMapping(
           };
         });
       } else {
-        // Decompose unit into 2-3 meaningful materials based on linked TPs
-        if (linkedTps.length > 0) {
-          materials = linkedTps.map((tp, mIdx) => {
-            const matchingAtp = validAtpItems.filter((atp) => atp.tpId === tp!.id);
+        // Decompose unit into distinct supported material scopes from linked TPs (NO generic invention)
+        const distinctScopes: string[] = [];
+        linkedTps.forEach((tp) => {
+          const t = extractTopicFromTp(tp);
+          if (t && !distinctScopes.some((s) => s.toLowerCase() === t.toLowerCase())) {
+            distinctScopes.push(t);
+          }
+        });
+
+        if (distinctScopes.length > 0) {
+          materials = distinctScopes.map((scopeTitle, mIdx) => {
+            const supportingTps = linkedTps.filter((t) => extractTopicFromTp(t).toLowerCase() === scopeTitle.toLowerCase());
+            const supportingTpIds = supportingTps.map((t) => t!.id);
+            const matchingAtps = validAtpItems.filter((atp) => supportingTpIds.includes(atp.tpId || ''));
             return {
               id: `mat-${Date.now()}-${uIdx + 1}-${mIdx + 1}`,
-              title: extractTopicFromTp(tp),
+              title: scopeTitle,
               order: mIdx + 1,
-              linkedTpIds: [tp!.id],
-              linkedAtpItemIds: matchingAtp.map((a) => a.id),
+              linkedTpIds: supportingTpIds.length > 0 ? supportingTpIds : linkedTpIds,
+              linkedAtpItemIds: matchingAtps.length > 0 ? matchingAtps.map((a) => a.id) : linkedAtpItemIds,
             };
           });
         } else {
+          // If no TPs linked yet, create 1 material referencing the unit title
           materials = [
             {
               id: `mat-${Date.now()}-${uIdx + 1}-1`,
-              title: `Pengenalan dan Konsep Dasar ${unitTitle.replace(/^Bab\s+\d+:\s*/i, '')}`,
+              title: unitTitle.replace(/^Bab\s+\d+:\s*/i, ''),
               order: 1,
-              linkedTpIds: linkedTpIds,
-              linkedAtpItemIds: linkedAtpItemIds,
-            },
-            {
-              id: `mat-${Date.now()}-${uIdx + 1}-2`,
-              title: `Penerapan dan Praktik ${unitTitle.replace(/^Bab\s+\d+:\s*/i, '')}`,
-              order: 2,
               linkedTpIds: linkedTpIds,
               linkedAtpItemIds: linkedAtpItemIds,
             },
@@ -617,10 +686,73 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     };
   }
 
-  // Initial Generation from scratch
-  const totalAtp = Math.max(1, validAtpItems.length);
-  const unitCount = Math.max(1, Math.min(20, targetUnitCount || Math.min(6, Math.max(2, Math.ceil(totalAtp / 2)))));
+  // Initial Generation: Deterministic Semantic Clustering along canonical ATP sequence
+  const targetCount = Math.max(1, Math.min(20, targetUnitCount || 6));
 
+  // Build semantic clusters along ATP chronological sequence
+  const rawClusters: Array<(typeof validAtpItems)> = [];
+  let currentCluster: (typeof validAtpItems) = [];
+
+  validAtpItems.forEach((atp) => {
+    if (currentCluster.length === 0) {
+      currentCluster.push(atp);
+    } else {
+      const atpTp = atp.tpId ? tpMap.get(atp.tpId) : undefined;
+      // Check relationship with existing TPs in current cluster
+      const clusterTps = currentCluster.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
+      const isRelated = clusterTps.some((cTp) => areTpsSemanticallyRelated(atpTp, cTp));
+
+      if (isRelated) {
+        currentCluster.push(atp);
+      } else {
+        rawClusters.push(currentCluster);
+        currentCluster = [atp];
+      }
+    }
+  });
+
+  if (currentCluster.length > 0) {
+    rawClusters.push(currentCluster);
+  }
+
+  // Organic balancing against targetCount (NEVER arithmetic division, only sequence-preserving merges/splits)
+  let semanticClusters = rawClusters;
+
+  // If there are too many small adjacent clusters compared to targetCount, merge most related adjacent ones
+  while (semanticClusters.length > targetCount && semanticClusters.length > 1) {
+    let bestMergeIdx = 0;
+    let highestSimilarity = -1;
+
+    for (let i = 0; i < semanticClusters.length - 1; i++) {
+      const c1 = semanticClusters[i];
+      const c2 = semanticClusters[i + 1];
+      const tp1 = c1.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
+      const tp2 = c2.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
+
+      let sim = 0;
+      tp1.forEach((t1) => {
+        tp2.forEach((t2) => {
+          if (areTpsSemanticallyRelated(t1, t2)) sim += 2;
+          const kw1 = extractKeywords(t1?.statement || '');
+          const kw2 = extractKeywords(t2?.statement || '');
+          sim += kw1.filter((k) => kw2.includes(k)).length;
+        });
+      });
+
+      // Prefer merging small single-item clusters
+      if (c1.length === 1 || c2.length === 1) sim += 1;
+
+      if (sim > highestSimilarity) {
+        highestSimilarity = sim;
+        bestMergeIdx = i;
+      }
+    }
+
+    const merged = [...semanticClusters[bestMergeIdx], ...semanticClusters[bestMergeIdx + 1]];
+    semanticClusters.splice(bestMergeIdx, 2, merged);
+  }
+
+  // Build Bab units from the semantic clusters
   const units: Array<{
     id: string;
     title: string;
@@ -636,14 +768,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     }>;
   }> = [];
 
-  // Group ATP items chronologically across unitCount
-  const atpClusters: Array<(typeof validAtpItems)> = Array.from({ length: unitCount }, () => []);
-  validAtpItems.forEach((atp, idx) => {
-    const clusterIdx = Math.min(unitCount - 1, Math.floor((idx / totalAtp) * unitCount));
-    atpClusters[clusterIdx].push(atp);
-  });
-
-  atpClusters.forEach((cluster, cIdx) => {
+  semanticClusters.forEach((cluster, cIdx) => {
     const unitOrder = cIdx + 1;
     const unitId = `unit-${Date.now()}-${unitOrder}`;
     const linkedAtpItemIds = cluster.map((a) => a.id);
@@ -656,22 +781,22 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     const linkedTpIds = Array.from(linkedTpIdsSet);
     const linkedTps = linkedTpIds.map((id) => tpMap.get(id)).filter(Boolean);
 
-    // Determine representative Bab title
+    // Determine representative Bab title from dominant content scope
     let mainTopic = '';
-    if (linkedTps.length > 0) {
-      const scopes = linkedTps.map((t) => t?.contentScope?.trim()).filter(Boolean);
-      if (scopes.length > 0) {
-        mainTopic = scopes[0]!;
-      } else {
-        mainTopic = extractTopicFromTp(linkedTps[0]);
-      }
+    const nonCrossCuttingTps = linkedTps.filter((t) => !isCrossCuttingTp(t));
+    const titleCandidates = (nonCrossCuttingTps.length > 0 ? nonCrossCuttingTps : linkedTps)
+      .map((t) => extractTopicFromTp(t))
+      .filter((s) => s.length > 0);
+
+    if (titleCandidates.length > 0) {
+      mainTopic = titleCandidates[0];
     } else {
       mainTopic = `Materi Pembelajaran Bagian ${unitOrder}`;
     }
 
     const unitTitle = `Bab ${unitOrder}: ${mainTopic.replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '')}`;
 
-    // Decompose into multiple meaningful materials (2 to 4 materials per Bab)
+    // Decompose into distinct supported Lingkup Materi (No generic inventions, no forced min 2)
     const materials: Array<{
       id: string;
       title: string;
@@ -680,47 +805,50 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       linkedAtpItemIds: string[];
     }> = [];
 
-    if (linkedTps.length > 0) {
-      linkedTps.forEach((tp, mIdx) => {
-        const matchingAtps = cluster.filter((a) => a.tpId === tp!.id).map((a) => a.id);
-        materials.push({
-          id: `mat-${Date.now()}-${unitOrder}-${mIdx + 1}`,
-          title: extractTopicFromTp(tp),
-          order: mIdx + 1,
-          linkedTpIds: [tp!.id],
-          linkedAtpItemIds: matchingAtps.length > 0 ? matchingAtps : linkedAtpItemIds,
-        });
-      });
-    }
+    // Collect all genuine material scopes from linked TPs and CP Analysis items
+    const distinctScopeMap = new Map<string, { tpIds: Set<string>; atpIds: Set<string> }>();
 
-    // Ensure at least 2 decomposed materials per Bab
-    if (materials.length === 1) {
-      const baseTitle = materials[0].title;
-      materials[0].title = `Konsep dan Pemahaman ${baseTitle}`;
+    linkedTps.forEach((tp) => {
+      const scopeTitle = extractTopicFromTp(tp);
+      const normalizedKey = scopeTitle.toLowerCase().trim();
+
+      if (!distinctScopeMap.has(normalizedKey)) {
+        distinctScopeMap.set(normalizedKey, { tpIds: new Set(), atpIds: new Set() });
+      }
+
+      const entry = distinctScopeMap.get(normalizedKey)!;
+      entry.tpIds.add(tp!.id);
+      cluster.filter((a) => a.tpId === tp!.id).forEach((a) => entry.atpIds.add(a.id));
+    });
+
+    let matIndex = 1;
+    distinctScopeMap.forEach((entry, normKey) => {
+      // Find original casing
+      const originalTp = linkedTps.find((t) => extractTopicFromTp(t).toLowerCase().trim() === normKey);
+      const title = originalTp ? extractTopicFromTp(originalTp) : normKey;
+
+      const matTpIds = Array.from(entry.tpIds);
+      const matAtpIds = Array.from(entry.atpIds);
+
       materials.push({
-        id: `mat-${Date.now()}-${unitOrder}-2`,
-        title: `Aplikasi dan Eksplorasi ${baseTitle}`,
-        order: 2,
-        linkedTpIds: materials[0].linkedTpIds,
-        linkedAtpItemIds: materials[0].linkedAtpItemIds,
+        id: `mat-${Date.now()}-${unitOrder}-${matIndex}`,
+        title,
+        order: matIndex,
+        linkedTpIds: matTpIds.length > 0 ? matTpIds : linkedTpIds,
+        linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : linkedAtpItemIds,
       });
-    } else if (materials.length === 0) {
-      materials.push(
-        {
-          id: `mat-${Date.now()}-${unitOrder}-1`,
-          title: `Pengenalan Konsep ${mainTopic}`,
-          order: 1,
-          linkedTpIds: [],
-          linkedAtpItemIds: linkedAtpItemIds,
-        },
-        {
-          id: `mat-${Date.now()}-${unitOrder}-2`,
-          title: `Penerapan Praktik ${mainTopic}`,
-          order: 2,
-          linkedTpIds: [],
-          linkedAtpItemIds: linkedAtpItemIds,
-        }
-      );
+      matIndex++;
+    });
+
+    // If somehow no materials extracted, use the main topic as the single supported material
+    if (materials.length === 0) {
+      materials.push({
+        id: `mat-${Date.now()}-${unitOrder}-1`,
+        title: mainTopic.replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, ''),
+        order: 1,
+        linkedTpIds,
+        linkedAtpItemIds,
+      });
     }
 
     units.push({

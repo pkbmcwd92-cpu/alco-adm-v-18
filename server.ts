@@ -1079,7 +1079,7 @@ PRINSIP & OTORITAS PEDAGOGIS (WAJIB DIPATUHI):
 4. TP dari elemen/domain yang berbeda namun mendukung topik yang sama dapat disatukan dalam satu Bab (misal: TP pemahaman dan TP keterampilan praktis pada topik yang sama).
 5. TP integratif / lintas-elemen (misal: karakter/kebugaran/analisis umum) dapat dikaitkan ke Bab relevan bersama TP konten utama.
 6. Target jumlah Bab adalah ${count} Bab sebagai panduan organisasi. Jika TP/ATP yang tersedia secara alami lebih sesuai dengan jumlah Bab tertentu, gunakan pengelompokan yang paling logis. JANGAN PERNAH membuat TP atau ATP fiktif.
-7. Setiap Bab HARUS didekomposisi menjadi beberapa Lingkup Materi (2 s.d. 5 materi per Bab). Lingkup Materi BUKAN sekadar 1:1 dengan ATP, melainkan rincian topik/fokus esensial yang dipayungi oleh Bab tersebut.
+7. Setiap Bab didekomposisi menjadi Lingkup Materi yang didukung secara autentik oleh TP dan konteks Analisis CP terkait (Lingkup Materi BUKAN sekadar 1:1 dengan langkah ATP). Satu Bab dapat memuat satu atau beberapa Lingkup Materi sesuai kedalaman materi yang didukung secara pedagogis. JANGAN MENGARANG materi generik atau fiktif hanya untuk memenuhi kuota jumlah materi.
 8. Setiap Lingkup Materi harus mencantumkan relasi linkedTpIds dan linkedAtpItemIds dari TP/ATP yang mendukungnya.
 ${
   existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0
