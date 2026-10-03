@@ -828,13 +828,10 @@ Kembalikan respon dalam format JSON sesuai schema:`;
           sequenceCounters.set(key, seq);
 
           const generatedCode = `${elemCode}-${scopeCode}-${String(seq).padStart(2, '0')}`;
-          const finalCode = item.code && /^E\d+-[A-Za-z0-9]+-\d{2}$/.test(item.code.trim())
-            ? item.code.trim().toUpperCase()
-            : generatedCode;
 
           return {
             ...item,
-            code: finalCode,
+            code: generatedCode,
             scopeCode,
             cpAnalysisItemIds: filteredIds,
           };

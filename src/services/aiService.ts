@@ -22,6 +22,7 @@ export interface CanonicalCPAnalysisResult {
   items: Array<{
     elementId?: string;
     elementName: string;
+    scopeCode?: string;
     cpText?: string;
     cpCompetence: string;
     materialScope: string;

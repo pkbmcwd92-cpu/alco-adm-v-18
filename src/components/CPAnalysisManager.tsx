@@ -55,6 +55,7 @@ export function deriveAnalysisItemsFromCP(cp: CPData): CPAnalysisItem[] {
     id: `ana-item-${Date.now()}-${idx + 1}`,
     elementId: el.id,
     elementName: el.name,
+    scopeCode: '',
     cpText: el.content,
     cpCompetence: '',
     materialScope: el.name,
@@ -192,6 +193,7 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
         id: `ana-item-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`,
         elementId: it.elementId || (cp.elements && cp.elements[idx]?.id),
         elementName: it.elementName || (cp.elements && cp.elements[idx]?.name) || `Elemen ${idx + 1}`,
+        scopeCode: it.scopeCode || '',
         cpText: it.cpText || (cp.elements && cp.elements[idx]?.content) || '',
         cpCompetence: it.cpCompetence || '',
         materialScope: it.materialScope || '',
@@ -522,16 +524,31 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-indigo-900 block">
-                    2. Lingkup Materi Inti / Konten:
-                  </label>
-                  <input
-                    type="text"
-                    value={item.materialScope}
-                    onChange={(e) => handleUpdateItem(item.id, 'materialScope', e.target.value)}
-                    placeholder="Contoh: Pola gerak dasar lokomotor dan manipulatif"
-                    className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-medium"
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-indigo-900 block">
+                      2. Lingkup Materi Inti / Konten:
+                    </label>
+                    <label className="text-[11px] font-semibold text-purple-900 block">
+                      Kode Lingkup:
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={item.materialScope}
+                      onChange={(e) => handleUpdateItem(item.id, 'materialScope', e.target.value)}
+                      placeholder="Contoh: Pola gerak dasar lokomotor dan manipulatif"
+                      className="flex-1 text-xs text-slate-800 bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-medium"
+                    />
+                    <input
+                      type="text"
+                      value={item.scopeCode || ''}
+                      onChange={(e) => handleUpdateItem(item.id, 'scopeCode', e.target.value.toUpperCase())}
+                      placeholder="PGD"
+                      className="w-20 text-xs text-center font-bold text-purple-900 bg-purple-50/50 border border-purple-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 focus:outline-hidden uppercase"
+                      title="Kode Lingkup"
+                    />
+                  </div>
                 </div>
               </div>
 

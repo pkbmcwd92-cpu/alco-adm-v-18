@@ -52,6 +52,7 @@ export const CPManager: React.FC<CPManagerProps> = ({
   const [selectedResult, setSelectedResult] = useState<CPSourceSearchResult | null>(null);
 
   const [saveToast, setSaveToast] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Sync if prop changes
   useEffect(() => {
@@ -96,10 +97,20 @@ export const CPManager: React.FC<CPManagerProps> = ({
   };
 
   const handleAddElement = () => {
-    const nextIndex = elements.length + 1;
+    let maxNum = 0;
+    elements.forEach((e) => {
+      const match = (e.code || '').match(/^E(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+    const nextNum = maxNum + 1;
     const newElem: CPElem = {
       id: `elem-${Date.now()}`,
-      code: `E${nextIndex}`,
+      code: `E${nextNum}`,
       name: '',
       content: '',
     };
@@ -114,12 +125,35 @@ export const CPManager: React.FC<CPManagerProps> = ({
     setElements(elements.map((e) => (e.id === id ? { ...e, [field]: val } : e)));
   };
 
-  const handleSave = () => {
+  const handleSave = (): boolean => {
+    setValidationError(null);
+
+    // 1. Fill empty codes with canonical fallback E1, E2, etc. before onSaveCP
+    const updatedElements = elements.map((e, idx) => {
+      const code = e.code && e.code.trim() ? e.code.trim().toUpperCase() : `E${idx + 1}`;
+      return {
+        ...e,
+        code,
+      };
+    });
+
+    // 2. Ensure codes are uppercase and not duplicate
+    const codes = new Set<string>();
+    for (const e of updatedElements) {
+      if (codes.has(e.code)) {
+        setValidationError(`Kode elemen "${e.code}" duplikat! Kode elemen harus unik dalam satu Capaian Pembelajaran.`);
+        return false;
+      }
+      codes.add(e.code);
+    }
+
+    setElements(updatedElements);
+
     const updated: CPData = {
       ...cp,
       academicSettingId: academicSetting.id,
       generalDescription,
-      elements,
+      elements: updatedElements,
       source: source || {
         title: `CP ${academicSetting.subject} (${context.phase})`,
         institution: 'Entri Mandiri Guru',
@@ -133,6 +167,7 @@ export const CPManager: React.FC<CPManagerProps> = ({
     onSaveCP(updated);
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 2500);
+    return true;
   };
 
   const handleSaveAndNext = () => {
@@ -140,14 +175,26 @@ export const CPManager: React.FC<CPManagerProps> = ({
       alert('Mohon isi deskripsi CP umum atau minimal 1 elemen CP sebelum melanjutkan.');
       return;
     }
-    handleSave();
-    onNextStep();
+    const savedSuccessfully = handleSave();
+    if (savedSuccessfully) {
+      onNextStep();
+    }
   };
 
   const hasCP = (generalDescription && generalDescription.trim().length > 0) || elements.length > 0;
 
   return (
     <div className="space-y-6">
+      {validationError && (
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold text-red-900 uppercase tracking-wider">Kesalahan Validasi</h4>
+            <p className="text-xs text-red-700 font-medium leading-relaxed">{validationError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Step Banner */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
