@@ -837,9 +837,67 @@ export function fallbackGenerateCanonicalATPUnitMapping(
 
   const isCrossCuttingTp = (tp?: (typeof validTpItems)[0]): boolean => {
     if (!tp) return false;
-    const full = `${tp.statement || ''} ${tp.contentScope || ''} ${tp.elementName || ''}`.toLowerCase();
-    const cleanWords = full.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-    return cleanWords.some((w) => CROSS_CUTTING_TOKENS.has(w));
+
+    const checkSubstantiveCrossCutting = (text: string): boolean => {
+      if (!text) return false;
+      const clean = text.toLowerCase().trim();
+      
+      if (
+        clean.includes('tanggung jawab') ||
+        clean.includes('evaluasi diri') ||
+        clean.includes('profil lulusan') ||
+        clean.includes('profil pelajar pancasila') ||
+        clean.includes('pengembangan karakter')
+      ) {
+        return true;
+      }
+      
+      const substantiveKeywords = [
+        'karakter', 'refleksi', 'kolaborasi', 'sikap', 'nilai', 'perilaku', 'akhlak', 'sosial', 'moral', 'spiritual', 'emosional'
+      ];
+      
+      const words = clean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      return words.some(w => substantiveKeywords.includes(w));
+    };
+
+    const checkStatementCrossCutting = (statement: string): boolean => {
+      if (!statement) return false;
+      const clean = statement.toLowerCase().trim();
+      
+      if (
+        clean.includes('tanggung jawab') ||
+        clean.includes('evaluasi diri') ||
+        clean.includes('profil lulusan') ||
+        clean.includes('profil pelajar pancasila') ||
+        clean.includes('pengembangan karakter')
+      ) {
+        return true;
+      }
+      
+      const substantiveStatementKeywords = [
+        'karakter', 'refleksi', 'kolaborasi', 'sikap'
+      ];
+      
+      const words = clean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      return words.some(w => substantiveStatementKeywords.includes(w));
+    };
+
+    // 1. contentScope check (primary signal)
+    if (tp.contentScope && checkSubstantiveCrossCutting(tp.contentScope)) {
+      return true;
+    }
+
+    // 2. elementName check
+    if (tp.elementName && checkSubstantiveCrossCutting(tp.elementName)) {
+      return true;
+    }
+
+    // 3. statement check
+    if (tp.statement && checkStatementCrossCutting(tp.statement)) {
+      return true;
+    }
+
+    return false;
   };
 
   const areTpsSemanticallyRelated = (
