@@ -540,6 +540,7 @@ export function validateTPDataWorkflow(
 
   // Check items completeness, stable ID uniqueness & CP Analysis coverage
   const seenIds = new Set<string>();
+  const seenCodes = new Set<string>();
   const referencedAnalysisItemIds = new Set<string>();
 
   const analysisItemMap = new Map<string, { id: string; elementId?: string; elementName?: string }>();
@@ -568,6 +569,16 @@ export function validateTPDataWorkflow(
         issues.push(`Terdeteksi duplikasi Stable ID (${item.id}) pada butir TP.`);
       }
       seenIds.add(item.id);
+    }
+
+    if (!item.code || !item.code.trim()) {
+      issues.push(`Butir TP ke-${i + 1} belum memiliki kode TP.`);
+    } else {
+      const normalizedCode = item.code.trim().toUpperCase();
+      if (seenCodes.has(normalizedCode)) {
+        issues.push(`Terdeteksi duplikasi Kode TP (${item.code}) pada daftar TP.`);
+      }
+      seenCodes.add(normalizedCode);
     }
 
     // Deep validation against CP Analysis items if available

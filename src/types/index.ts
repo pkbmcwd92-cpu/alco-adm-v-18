@@ -275,6 +275,7 @@ export interface CPSource {
 
 export interface CPElem {
   id: string;
+  code?: string; // e.g. "E1", "E2"
   name: string; // e.g. "Menyimak", "Membaca dan Memirsa", "Berbicara dan Mempresentasikan", "Menulis"
   content: string;
 }
@@ -299,6 +300,7 @@ export interface CPAnalysisItem {
   id: string;
   elementId?: string;
   elementName: string;
+  scopeCode?: string; // e.g. "PGD", "AS"
   cpText?: string;
   cpCompetence: string; // Kompetensi / KKO dari CP
   materialScope: string; // Lingkup Materi Inti
@@ -335,7 +337,8 @@ export interface CPAnalysisData {
 
 export interface TPItem {
   id: string;
-  code: string; // e.g. "TP 1.1", "TP 4.1"
+  code: string; // e.g. "E1-PGD-01", "E2-PGD-01"
+  scopeCode?: string; // e.g. "PGD", "AS"
   cpAnalysisId?: string; // Lineage reference to CPAnalysisItem.id
   elementName?: string;
   statement: string; // Pernyataan Tujuan Pembelajaran

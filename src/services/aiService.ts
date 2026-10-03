@@ -418,7 +418,11 @@ export function mergeGeneratedTPsWithExisting(
     if (bestMatch) {
       matchedExistingIds.add(bestMatch.id);
       // Strictly PRESERVE existing TPItem.id!
-      const finalCode = bestMatch.code?.trim() ? bestMatch.code : (gen.code || `TP ${result.length + 1}`);
+      const isSemantic = (c?: string) => typeof c === 'string' && /^E\d+-[A-Za-z0-9]+-\d{2}$/.test(c.trim());
+      const finalCode = bestMatch.code && isSemantic(bestMatch.code)
+        ? bestMatch.code.trim().toUpperCase()
+        : (gen.code || bestMatch.code || `E1-MAT-${String(result.length + 1).padStart(2, '0')}`);
+      const finalScopeCode = bestMatch.scopeCode || gen.scopeCode;
       const finalStatement = bestMatch.statement?.trim() ? bestMatch.statement : (gen.statement || (gen as any).description || '');
       const finalElementName = bestMatch.elementName?.trim() ? bestMatch.elementName : (gen.elementName || '');
       const finalCompetence = bestMatch.competence?.trim() ? bestMatch.competence : (gen.competence || '');
@@ -444,6 +448,7 @@ export function mergeGeneratedTPsWithExisting(
         ...bestMatch,
         id: bestMatch.id, // Stable ID preserved!
         code: finalCode,
+        scopeCode: finalScopeCode,
         elementName: finalElementName,
         statement: finalStatement,
         description: finalStatement,
@@ -458,7 +463,8 @@ export function mergeGeneratedTPsWithExisting(
       const stmt = gen.statement || (gen as any).description || '';
       result.push({
         id: `tp-item-${Date.now()}-${i + 1}-${Math.random().toString(36).substring(2, 6)}`,
-        code: gen.code || `TP ${result.length + 1}`,
+        code: gen.code || `E1-MAT-${String(result.length + 1).padStart(2, '0')}`,
+        scopeCode: gen.scopeCode || 'MAT',
         elementName: gen.elementName || '',
         statement: stmt,
         description: stmt,

@@ -96,8 +96,10 @@ export const CPManager: React.FC<CPManagerProps> = ({
   };
 
   const handleAddElement = () => {
+    const nextIndex = elements.length + 1;
     const newElem: CPElem = {
       id: `elem-${Date.now()}`,
+      code: `E${nextIndex}`,
       name: '',
       content: '',
     };
@@ -108,7 +110,7 @@ export const CPManager: React.FC<CPManagerProps> = ({
     setElements(elements.filter((e) => e.id !== id));
   };
 
-  const handleElementChange = (id: string, field: 'name' | 'content', val: string) => {
+  const handleElementChange = (id: string, field: keyof CPElem, val: string) => {
     setElements(elements.map((e) => (e.id === id ? { ...e, [field]: val } : e)));
   };
 
@@ -291,13 +293,23 @@ export const CPManager: React.FC<CPManagerProps> = ({
               {elements.map((elem, idx) => (
                 <div key={elem.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nama Elemen (misal: Menyimak / Keterampilan Gerak)"
-                      value={elem.name}
-                      onChange={(e) => handleElementChange(elem.id, 'name', e.target.value)}
-                      className="text-xs font-bold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 flex-1"
-                    />
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        placeholder="E1"
+                        value={elem.code || `E${idx + 1}`}
+                        onChange={(e) => handleElementChange(elem.id, 'code', e.target.value)}
+                        className="w-16 text-xs font-bold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-1.5 rounded-lg text-center uppercase focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                        title="Kode Elemen CP"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Nama Elemen (misal: Menyimak / Keterampilan Gerak)"
+                        value={elem.name}
+                        onChange={(e) => handleElementChange(elem.id, 'name', e.target.value)}
+                        className="text-xs font-bold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 flex-1"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveElement(elem.id)}

@@ -289,6 +289,7 @@ class CPSourceRepository {
       generalDescription: item.generalDescription,
       elements: item.elements.map((el, elIdx) => ({
         id: `elem-${index + 1}-${elIdx + 1}`,
+        code: `E${elIdx + 1}`,
         name: el.name,
         content: el.content,
       })),
@@ -322,6 +323,7 @@ class CPSourceRepository {
       elements: [
         {
           id: 'elem-fallback-1',
+          code: 'E1',
           name: 'Pemahaman Konsep & Keterampilan',
           content: `Peserta didik mampu memahami konsep esensial dan mempraktikkan keterampilan utama ${defaultSubject} secara bertahap.`,
         },

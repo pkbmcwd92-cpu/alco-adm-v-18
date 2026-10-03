@@ -110,6 +110,18 @@ async function generateContentWithRetry(
   throw lastError || new Error('Gagal memproses permintaan AI');
 }
 
+function deriveScopeCode(scopeText?: string): string {
+  if (!scopeText || !scopeText.trim()) return 'MAT';
+  const words = scopeText.trim().replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const code = words.map((w) => w[0].toUpperCase()).slice(0, 4).join('');
+    if (code.length >= 2) return code;
+  }
+  const word = words[0].toUpperCase();
+  if (word.length <= 4) return word;
+  return word.slice(0, 3);
+}
+
 function cleanAndParseJSON(rawText?: string, fallback: any = {}): any {
   if (!rawText) return fallback;
   let cleaned = rawText.trim();
@@ -513,6 +525,7 @@ PRINSIP BEDAH & ANALISIS CP:
 2. Identifikasi untuk setiap elemen CP:
    - "cpCompetence": Kata Kerja Operasional (KKO) / Kompetensi spesifik yang ditargetkan (misal: "Memahami & Mengidentifikasi", "Mempraktikkan & Menyesuaikan").
    - "materialScope": Lingkup Materi / Konsep Inti esensial yang dipelajari.
+   - "scopeCode": Singkatan 2-5 huruf kapital yang merepresentasikan lingkup materi (misal: "Pola Gerak Dasar" -> "PGD", "Aktivitas Senam" -> "AS", "Bilangan Bulat" -> "BB").
    - "meaningfulUnderstanding": Pemahaman bermakna / variasi keterampilan yang diharapkan.
    - "suggestedTp": Rekomendasi/usulan rumusan awal Tujuan Pembelajaran yang diturunkan langsung dari elemen CP tersebut.
 3. GRANULARITAS BEDAH ELEMEN: Jika satu elemen CP memuat beberapa kompetensi atau lingkup materi yang berbeda secara pedagogis, AI HARUS memecahnya menjadi beberapa CPAnalysisItem tersendiri. Setiap item harus mewakili satu pasangan kompetensi + lingkup materi yang cukup fokus untuk menjadi dasar TP. Jangan memaksakan jumlah angka tertentu (bukan kuota).
@@ -526,7 +539,7 @@ DATA PEMBELAJARAN:
 - Elemen-Elemen CP:
 ${
   validElements.length > 0
-    ? validElements.map((e: any, idx: number) => `${idx + 1}. [ID: ${e.id || e.elementId || `elem-${idx + 1}`}] [Nama: ${e.name || '-'}] Uraian: ${e.content || '-'}`).join('\n')
+    ? validElements.map((e: any, idx: number) => `${idx + 1}. [ID: ${e.id || e.elementId || `elem-${idx + 1}`}] [Kode: ${e.code || `E${idx + 1}`}] [Nama: ${e.name || '-'}] Uraian: ${e.content || '-'}`).join('\n')
     : 'Tidak ada rincian elemen terpisah.'
 }
 
@@ -547,13 +560,14 @@ Kembalikan respon JSON sesuai schema:`;
                   properties: {
                     elementId: { type: Type.STRING, description: 'ID elemen CP rujukan (persis dari input)' },
                     elementName: { type: Type.STRING, description: 'Nama elemen CP rujukan' },
+                    scopeCode: { type: Type.STRING, description: 'Singkatan 2-5 huruf kapital lingkup materi (misal: PGD, AS, BB)' },
                     cpText: { type: Type.STRING, description: 'Kutipan/teks ringkas CP elemen yang dianalisis' },
                     cpCompetence: { type: Type.STRING, description: 'Kompetensi / KKO utama' },
                     materialScope: { type: Type.STRING, description: 'Lingkup Materi Inti' },
                     meaningfulUnderstanding: { type: Type.STRING, description: 'Pemahaman bermakna / variasi' },
                     suggestedTp: { type: Type.STRING, description: 'Rekomendasi rumusan awal TP' },
                   },
-                  required: ['elementName', 'cpCompetence', 'materialScope', 'suggestedTp'],
+                  required: ['elementName', 'cpCompetence', 'materialScope', 'scopeCode', 'suggestedTp'],
                 },
               },
             },
@@ -564,7 +578,7 @@ Kembalikan respon JSON sesuai schema:`;
 
       const parsed = cleanAndParseJSON(response.text, null);
       if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        // Sanitize elementId linkage
+        // Sanitize elementId linkage and scopeCode
         const sanitizedItems = parsed.items.map((item: any, idx: number) => {
           let elemId = item.elementId && validElementIdSet.has(String(item.elementId)) ? String(item.elementId) : undefined;
           if (!elemId && validElements.length > 0) {
@@ -574,9 +588,14 @@ Kembalikan respon JSON sesuai schema:`;
               elemId = matchedElem.id || matchedElem.elementId;
             }
           }
+          const scopeCode = (item.scopeCode && typeof item.scopeCode === 'string' && item.scopeCode.trim().length >= 2)
+            ? item.scopeCode.trim().toUpperCase()
+            : deriveScopeCode(item.materialScope || item.elementName);
+
           return {
             elementId: elemId,
             elementName: item.elementName || (validElements[idx]?.name) || `Elemen ${idx + 1}`,
+            scopeCode,
             cpText: item.cpText || (validElements.find((e: any) => e.id === elemId)?.content) || '',
             cpCompetence: item.cpCompetence || '',
             materialScope: item.materialScope || '',
@@ -673,6 +692,12 @@ PRINSIP PEDAGOGIS & KONTRAK ELEMEN CP → TP (WAJIB DIPATUHI):
 4. PELACAKAN SILSILAH (LINEAGE):
    - Setiap butir TP HARUS mencantumkan ID butir Analisis CP pendukungnya dari elemen yang sama pada "cpAnalysisItemIds" (bisa 1 ID atau lebih dari elemen yang sama). JANGAN PERNAH mengarang ID fiktif.
 
+5. FORMAT KODE TP SEMANTIK:
+   - Kode TP HARUS menggunakan format: [elementCode]-[scopeCode]-[sequence 2 digit]
+   - Contoh: E1-PGD-01, E1-PGD-02, E1-PGD-03, E2-PGD-01.
+   - Urutan sequence dihitung per kombinasi elementCode + scopeCode.
+   - JANGAN menyertakan kelas/fase dalam kode TP (seperti TP 4.1).
+
 DATA PEMBELAJARAN:
 - Mata Pelajaran: ${subject || '-'}
 - Tingkat: ${grade || '-'} (${phase || '-'})
@@ -681,13 +706,13 @@ DATA PEMBELAJARAN:
 - Elemen-Elemen CP:
 ${
   cpElements && cpElements.length > 0
-    ? cpElements.map((e: { name: string; content: string }, idx: number) => `${idx + 1}. [Elemen: ${e.name}]: ${e.content}`).join('\n')
+    ? cpElements.map((e: { code?: string; name: string; content: string }, idx: number) => `${idx + 1}. [Kode: ${e.code || `E${idx + 1}`}] [Elemen: ${e.name}]: ${e.content}`).join('\n')
     : 'Tidak ada rincian elemen.'
 }
 ${
   validAnalysisItems.length > 0
     ? `\nHASIL ANALISIS CP (Rujukan Utama Kompetensi & Lingkup Materi):
-${validAnalysisItems.map((a: any, idx: number) => `${idx + 1}. [ID: ${a.id}] [Elemen: ${a.elementName || '-'}] Kompetensi: "${a.cpCompetence || '-'}" | Materi: "${a.materialScope || '-'}" | Rekomendasi TP: "${a.suggestedTp || '-'}"`).join('\n')}`
+${validAnalysisItems.map((a: any, idx: number) => `${idx + 1}. [ID: ${a.id}] [Elemen: ${a.elementName || '-'}] [ScopeCode: ${a.scopeCode || 'MAT'}] Kompetensi: "${a.cpCompetence || '-'}" | Materi: "${a.materialScope || '-'}" | Rekomendasi TP: "${a.suggestedTp || '-'}"`).join('\n')}`
     : ''
 }
 
@@ -703,7 +728,8 @@ Kembalikan respon dalam format JSON sesuai schema:`;
             items: {
               type: Type.OBJECT,
               properties: {
-                code: { type: Type.STRING, description: 'Kode TP misal TP 4.1, TP 4.2' },
+                code: { type: Type.STRING, description: 'Kode TP semantik misal E1-PGD-01, E2-PGD-01' },
+                scopeCode: { type: Type.STRING, description: 'Kode ringkas 2-5 huruf kapital lingkup materi (misal PGD, AS)' },
                 elementName: { type: Type.STRING, description: 'Nama Elemen CP yang menjadi rujukan' },
                 statement: { type: Type.STRING, description: 'Rumusan kalimat Tujuan Pembelajaran lengkap' },
                 competence: { type: Type.STRING, description: 'Kata Kerja Operasional / Kompetensi utama' },
@@ -719,7 +745,7 @@ Kembalikan respon dalam format JSON sesuai schema:`;
                   description: 'Daftar ID butir Analisis CP dari elemen yang sama yang menjadi rujukan',
                 },
               },
-              required: ['code', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions', 'cpAnalysisItemIds'],
+              required: ['code', 'scopeCode', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions', 'cpAnalysisItemIds'],
             },
           },
         },
@@ -729,7 +755,28 @@ Kembalikan respon dalam format JSON sesuai schema:`;
       const validation = validateAITPPayload(parsed);
 
       if (validation.isValid && Array.isArray(parsed)) {
-        // Lineage sanitization: filter out any invented CP Analysis IDs & ensure strictly single-element lineage
+        // Lineage & code sanitization
+        const sequenceCounters = new Map<string, number>();
+        const elemCodeMap = new Map<string, string>();
+        if (Array.isArray(cpElements)) {
+          cpElements.forEach((e: any, idx: number) => {
+            const code = e.code || `E${idx + 1}`;
+            if (e.id) elemCodeMap.set(String(e.id), code);
+            if (e.name) elemCodeMap.set(e.name.toLowerCase().trim(), code);
+          });
+        }
+
+        const analysisScopeCodeMap = new Map<string, { elemCode: string; scopeCode: string }>();
+        validAnalysisItems.forEach((a: any, idx: number) => {
+          if (a.id) {
+            const eCode = (a.elementId && elemCodeMap.get(String(a.elementId))) ||
+                          (a.elementName && elemCodeMap.get(a.elementName.toLowerCase().trim())) ||
+                          `E${idx + 1}`;
+            const sCode = a.scopeCode || deriveScopeCode(a.materialScope);
+            analysisScopeCodeMap.set(String(a.id), { elemCode: eCode, scopeCode: sCode });
+          }
+        });
+
         const sanitizedItems = parsed.map((item: any) => {
           const rawIds = Array.isArray(item.cpAnalysisItemIds) ? item.cpAnalysisItemIds : [];
           let filteredIds = rawIds.filter((id: string) => validAnalysisIdSet.has(String(id)));
@@ -760,8 +807,35 @@ Kembalikan respon dalam format JSON sesuai schema:`;
             }
           }
 
+          // Resolve semantic code format: E1-PGD-01
+          let elemCode = 'E1';
+          let scopeCode = 'MAT';
+
+          if (filteredIds.length > 0 && analysisScopeCodeMap.has(filteredIds[0])) {
+            const info = analysisScopeCodeMap.get(filteredIds[0])!;
+            elemCode = info.elemCode;
+            scopeCode = info.scopeCode;
+          } else {
+            const itemElem = (item.elementName || '').toLowerCase().trim();
+            elemCode = elemCodeMap.get(itemElem) || 'E1';
+            scopeCode = item.scopeCode && typeof item.scopeCode === 'string' && item.scopeCode.trim().length >= 2
+              ? item.scopeCode.trim().toUpperCase()
+              : deriveScopeCode(item.contentScope || item.elementName);
+          }
+
+          const key = `${elemCode}-${scopeCode}`;
+          const seq = (sequenceCounters.get(key) || 0) + 1;
+          sequenceCounters.set(key, seq);
+
+          const generatedCode = `${elemCode}-${scopeCode}-${String(seq).padStart(2, '0')}`;
+          const finalCode = item.code && /^E\d+-[A-Za-z0-9]+-\d{2}$/.test(item.code.trim())
+            ? item.code.trim().toUpperCase()
+            : generatedCode;
+
           return {
             ...item,
+            code: finalCode,
+            scopeCode,
             cpAnalysisItemIds: filteredIds,
           };
         });

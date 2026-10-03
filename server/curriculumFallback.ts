@@ -12,6 +12,18 @@ export interface FallbackAnalyzeCPParams {
   curriculum?: string;
 }
 
+export function deriveScopeCode(scopeText?: string): string {
+  if (!scopeText || !scopeText.trim()) return 'MAT';
+  const words = scopeText.trim().replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const code = words.map((w) => w[0].toUpperCase()).slice(0, 4).join('');
+    if (code.length >= 2) return code;
+  }
+  const word = words[0].toUpperCase();
+  if (word.length <= 4) return word;
+  return word.slice(0, 3);
+}
+
 export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
   const subject = params.subject || 'Mata Pelajaran';
   const grade = params.grade || '';
@@ -48,6 +60,7 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
   const items: Array<{
     elementId?: string;
     elementName: string;
+    scopeCode: string;
     cpText: string;
     cpCompetence: string;
     materialScope: string;
@@ -63,11 +76,13 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
 
       const competence = extractCompetenceFromText(elemContent);
       const scope = extractScopeFromText(elemContent);
+      const scopeCode = deriveScopeCode(scope || elemName);
       const suggestedTp = competence && scope ? `Peserta didik mampu ${competence.toLowerCase()} ${scope}.` : '';
 
       items.push({
         elementId: elemId,
         elementName: elemName,
+        scopeCode,
         cpText: elemContent,
         cpCompetence: competence,
         materialScope: scope,
@@ -78,11 +93,13 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
   } else if (cpGeneralText) {
     const competence = extractCompetenceFromText(cpGeneralText);
     const scope = extractScopeFromText(cpGeneralText);
+    const scopeCode = deriveScopeCode(scope || 'Umum');
     const suggestedTp = competence && scope ? `Peserta didik mampu ${competence.toLowerCase()} ${scope}.` : '';
 
     items.push({
       elementId: undefined,
       elementName: 'Capaian Umum',
+      scopeCode,
       cpText: cpGeneralText,
       cpCompetence: competence,
       materialScope: scope,
@@ -101,11 +118,12 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
 
 export interface FallbackGenerateTPParams {
   cpGeneral?: string;
-  cpElements?: { name: string; content: string }[];
+  cpElements?: { code?: string; name: string; content: string }[];
   cpAnalysisItems?: Array<{
     id: string;
     elementId?: string;
     elementName?: string;
+    scopeCode?: string;
     cpCompetence?: string;
     materialScope?: string;
     suggestedTp?: string;
@@ -113,6 +131,7 @@ export interface FallbackGenerateTPParams {
   existingTps?: Array<{
     id: string;
     code?: string;
+    scopeCode?: string;
     elementName?: string;
     statement: string;
     competence?: string;
@@ -139,13 +158,27 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
     return existingTps;
   }
 
-  const grade = params.grade || '';
-  const gradeDigits = grade.replace(/\D/g, '');
-  const codePrefix = gradeDigits ? `TP ${gradeDigits}.` : 'TP ';
-  let counter = 1;
+  const sequenceCounters = new Map<string, number>();
+
+  const getSemanticCode = (elemName: string, scopeText: string, providedElemCode?: string, providedScopeCode?: string): { code: string; scopeCode: string } => {
+    let elemCode = providedElemCode;
+    if (!elemCode) {
+      const foundIdx = validElements.findIndex((e) => e.name && elemName && e.name.toLowerCase().trim() === elemName.toLowerCase().trim());
+      elemCode = foundIdx !== -1 ? (validElements[foundIdx].code || `E${foundIdx + 1}`) : 'E1';
+    }
+    const scopeCode = providedScopeCode || deriveScopeCode(scopeText);
+    const key = `${elemCode}-${scopeCode}`;
+    const seq = (sequenceCounters.get(key) || 0) + 1;
+    sequenceCounters.set(key, seq);
+    return {
+      code: `${elemCode}-${scopeCode}-${String(seq).padStart(2, '0')}`,
+      scopeCode,
+    };
+  };
 
   const rawGeneratedItems: Array<{
     code: string;
+    scopeCode: string;
     elementName: string;
     statement: string;
     competence: string;
@@ -233,8 +266,10 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
         // Decompose into focused TPs
         compoundParts.forEach((part) => {
           const comp = cpaA.cpCompetence?.trim() || 'Memahami & Menerapkan';
+          const { code, scopeCode } = getSemanticCode(elemA, part, undefined, cpaA.scopeCode);
           rawGeneratedItems.push({
-            code: `${codePrefix}${counter++}`,
+            code,
+            scopeCode,
             elementName: elemA,
             statement: `Peserta didik mampu ${comp.toLowerCase()} ${part} secara mandiri dan bernalar kritis.`,
             competence: comp,
@@ -252,8 +287,10 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
           ? cpaA.suggestedTp
           : `Peserta didik mampu ${comp.toLowerCase()} ${finalScope} secara mandiri dan bernalar kritis.`;
 
+        const { code, scopeCode } = getSemanticCode(elemA, finalScope, undefined, cpaA.scopeCode);
         rawGeneratedItems.push({
-          code: `${codePrefix}${counter++}`,
+          code,
+          scopeCode,
           elementName: elemA,
           statement,
           competence: comp,
@@ -270,8 +307,10 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
       const cleanContent = elem.content ? elem.content.slice(0, 100).trim() : '';
       if (!cleanContent) return;
 
+      const { code, scopeCode } = getSemanticCode(elemName, cleanContent, elem.code);
       rawGeneratedItems.push({
-        code: `${codePrefix}${counter++}`,
+        code,
+        scopeCode,
         elementName: elemName,
         statement: `Peserta didik mampu memahami dan menerapkan konsep ${elemName ? elemName.toLowerCase() + ' terkait ' : ''}${cleanContent} secara mandiri dan bernalar kritis.`,
         competence: 'Memahami & Menerapkan',
@@ -282,12 +321,15 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
       });
     });
   } else if (cpGeneralText) {
+    const scope = cpGeneralText.slice(0, 80).trim();
+    const { code, scopeCode } = getSemanticCode('Capaian Umum', scope, 'E1');
     rawGeneratedItems.push({
-      code: `${codePrefix}${counter++}`,
+      code,
+      scopeCode,
       elementName: '',
       statement: `Peserta didik mampu memahami dan menjelaskan capaian ${cpGeneralText.slice(0, 100).trim()} secara komprehensif.`,
       competence: 'Memahami & Menjelaskan',
-      contentScope: cpGeneralText.slice(0, 80).trim(),
+      contentScope: scope,
       p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
       graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
       cpAnalysisItemIds: [],
