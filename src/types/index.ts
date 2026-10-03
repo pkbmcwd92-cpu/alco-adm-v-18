@@ -198,6 +198,7 @@ export interface AcademicSetting {
   semester?: '1 (Ganjil)' | '2 (Genap)' | '';
   level?: 'SD' | 'SMP' | 'SMA' | 'SMK' | '';
   grade: string; // e.g. "Kelas 4"
+  classSection?: string;
   phase: string; // e.g. "Fase B" (derived from grade)
   subject: string; // e.g. "Bahasa Indonesia"
   subjectWeeklyJP?: number; // JP Intrakurikuler Mapel per Minggu (Domain ideal)

@@ -339,11 +339,33 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
+            onClick={handleRunAIAnalysis}
+            disabled={isAnalyzing}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              isAnalyzing
+                ? 'bg-purple-100 text-purple-400 cursor-not-allowed border border-purple-200'
+                : 'bg-purple-600 text-white hover:bg-purple-700 shadow-xs'
+            }`}
+          >
+            {isAnalyzing ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
+                <span>Menganalisis CP...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-purple-200" />
+                <span>Analisis dengan AI</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={handleGenerateFromCP}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 text-blue-600" />
-            Tarik dari Elemen CP
+            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+            Salin Struktur Elemen CP
           </button>
           <button
             type="button"
@@ -355,6 +377,16 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
           </button>
         </div>
       </div>
+
+      {analysisError && (
+        <div className="p-4 bg-rose-50 border border-rose-300 rounded-2xl flex items-start gap-3 text-xs text-rose-900 shadow-xs">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-bold text-rose-950">Gagal Melakukan Analisis AI</span>
+            <p className="text-rose-800">{analysisError}</p>
+          </div>
+        </div>
+      )}
 
       {needsReview && (
         <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">
