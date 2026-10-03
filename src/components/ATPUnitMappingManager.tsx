@@ -13,11 +13,11 @@ import {
   Check,
   Plus,
   Trash2,
-  RotateCcw,
-  Info,
   Loader2,
-  ChevronDown,
-  ChevronUp,
+  ListPlus,
+  MoveRight,
+  HelpCircle,
+  Pencil,
 } from 'lucide-react';
 import { ATPData, ATPItem, TPData, AcademicSetting } from '../types';
 import { generateATPMappingWithAI, TeacherUnitConstraint } from '../services/aiService';
@@ -50,8 +50,8 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
   const [hasChanges, setHasChanges] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
 
-  // Initial unit extraction from existing items
-  const initialExtractedUnits = useMemo(() => {
+  // Initial Bab titles extracted from existing items
+  const initialUniqueUnits = useMemo(() => {
     const list: string[] = [];
     sortedInitialItems.forEach((it) => {
       const u = it.unitTitle?.trim();
@@ -64,27 +64,30 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
 
   // Target count of Bab (default 6 or existing count)
   const [targetUnitCount, setTargetUnitCount] = useState<number>(() => {
-    if (initialExtractedUnits.length > 0) {
-      return Math.max(1, Math.min(15, initialExtractedUnits.length));
+    if (initialUniqueUnits.length > 0) {
+      return Math.max(1, Math.min(15, initialUniqueUnits.length));
     }
     return 6;
   });
 
-  // Teacher directed Bab list (array of strings of length targetUnitCount)
-  const [teacherBabList, setTeacherBabList] = useState<string[]>(() => {
-    const arr: string[] = [];
-    const count = initialExtractedUnits.length > 0 ? initialExtractedUnits.length : 6;
-    for (let i = 0; i < count; i++) {
-      arr.push(initialExtractedUnits[i] || '');
+  // Explicit Bab title list managed in editor (allows empty Bab containers)
+  const [customBabList, setCustomBabList] = useState<string[]>(() => {
+    if (initialUniqueUnits.length > 0) {
+      return initialUniqueUnits;
     }
-    return arr;
+    // Default placeholder containers up to targetUnitCount
+    const initialPlaceholders: string[] = [];
+    for (let i = 1; i <= 6; i++) {
+      initialPlaceholders.push(`Bab ${i}`);
+    }
+    return initialPlaceholders;
   });
 
-  // AI Generation State
+  // AI Operation States
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingMode, setGeneratingMode] = useState<'ALL' | 'EMPTY_ONLY' | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
-  const [isBabListOpen, setIsBabListOpen] = useState(true);
 
   // Sync state if atp.items updates from outside
   useEffect(() => {
@@ -94,7 +97,6 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
     setItems(sorted);
     setHasChanges(false);
 
-    // Extract unique units to initialize or refresh Bab list if empty
     const uniqueUnits: string[] = [];
     sorted.forEach((it) => {
       const u = it.unitTitle?.trim();
@@ -104,52 +106,18 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
     });
 
     if (uniqueUnits.length > 0) {
-      setTeacherBabList((prev) => {
-        // If current list has teacher edits, preserve them
-        const hasExisting = prev.some((p) => p.trim().length > 0);
-        if (hasExisting) return prev;
-        const newArr = [...prev];
-        uniqueUnits.forEach((u, i) => {
-          newArr[i] = u;
+      setCustomBabList((prev) => {
+        // Merge existing customBabList with extracted units without duplicates
+        const combined = [...prev];
+        uniqueUnits.forEach((u) => {
+          if (!combined.includes(u)) {
+            combined.push(u);
+          }
         });
-        return newArr;
+        return combined;
       });
     }
   }, [atp.items]);
-
-  // Adjust teacherBabList length when targetUnitCount changes
-  const handleTargetCountChange = (newCount: number) => {
-    const clamped = Math.max(1, Math.min(15, newCount));
-    setTargetUnitCount(clamped);
-    setTeacherBabList((prev) => {
-      const copy = [...prev];
-      while (copy.length < clamped) {
-        copy.push('');
-      }
-      return copy.slice(0, clamped);
-    });
-  };
-
-  const handleTeacherBabNameChange = (index: number, value: string) => {
-    setTeacherBabList((prev) => {
-      const copy = [...prev];
-      copy[index] = value;
-      return copy;
-    });
-  };
-
-  const handleAddBabSlot = () => {
-    handleTargetCountChange(targetUnitCount + 1);
-  };
-
-  const handleRemoveBabSlot = (index: number) => {
-    if (targetUnitCount <= 1) return;
-    setTeacherBabList((prev) => {
-      const copy = prev.filter((_, i) => i !== index);
-      return copy;
-    });
-    setTargetUnitCount((prev) => Math.max(1, prev - 1));
-  };
 
   // Resolve TP map for easy lookup
   const tpMap = useMemo(() => {
@@ -160,68 +128,166 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
     return map;
   }, [tp.items]);
 
-  // Collect unique existing unit titles for datalist suggestions
-  const existingUnitTitles = useMemo(() => {
-    const titles = new Set<string>();
-    teacherBabList.forEach((b) => {
-      if (b.trim().length > 0) titles.add(b.trim());
-    });
-    items.forEach((it) => {
-      if (it.unitTitle && it.unitTitle.trim().length > 0) {
-        titles.add(it.unitTitle.trim());
+  // Combined ordered list of all active Bab titles
+  const allBabTitles = useMemo(() => {
+    const list: string[] = [];
+    customBabList.forEach((b) => {
+      const trimmed = b.trim();
+      if (trimmed && !list.includes(trimmed)) {
+        list.push(trimmed);
       }
     });
-    return Array.from(titles);
-  }, [teacherBabList, items]);
-
-  // Unit grouping breakdown
-  const unitStats = useMemo(() => {
-    const groups: Record<string, number> = {};
-    let unassigned = 0;
     items.forEach((it) => {
       const u = it.unitTitle?.trim();
-      if (u) {
-        groups[u] = (groups[u] || 0) + 1;
-      } else {
-        unassigned++;
+      if (u && !list.includes(u)) {
+        list.push(u);
       }
     });
-    return { groups, unassigned };
+    return list;
+  }, [customBabList, items]);
+
+  // Bab-centered grouped containers
+  const babContainers = useMemo(() => {
+    return allBabTitles.map((title, idx) => {
+      const assignedItems = items.filter((it) => it.unitTitle?.trim() === title);
+      return {
+        index: idx + 1,
+        title,
+        items: assignedItems,
+      };
+    });
+  }, [allBabTitles, items]);
+
+  // Unassigned ATP items (items without unitTitle)
+  const unassignedItems = useMemo(() => {
+    return items.filter((it) => !it.unitTitle || it.unitTitle.trim().length === 0);
   }, [items]);
 
-  const handleFieldChange = (
-    index: number,
-    field: 'unitTitle' | 'materialScope',
-    value: string
-  ) => {
-    setItems((prev) => {
-      const copy = [...prev];
-      copy[index] = {
-        ...copy[index],
-        [field]: value,
-      };
-      return copy;
-    });
+  // Total mapped items
+  const mappedCount = useMemo(() => {
+    return items.filter((it) => it.unitTitle && it.unitTitle.trim().length > 0).length;
+  }, [items]);
+
+  // Handlers for Manual Editing
+  const handleRenameBab = (oldTitle: string, newTitle: string) => {
+    const trimmedNew = newTitle;
+    setCustomBabList((prev) =>
+      prev.map((b) => (b.trim() === oldTitle.trim() ? trimmedNew : b))
+    );
+
+    // Update unitTitle of all ATP items currently assigned to this Bab
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.unitTitle?.trim() === oldTitle.trim()) {
+          return {
+            ...it,
+            unitTitle: trimmedNew,
+          };
+        }
+        return it;
+      })
+    );
+
     setHasChanges(true);
     setSaveSuccessNotice(false);
   };
 
-  // AI Generation with Teacher-Directed Constraint & Strict Merge Safety
-  const handleGenerateAIMapping = async () => {
+  const handleMaterialScopeChange = (atpItemId: string, newScope: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === atpItemId) {
+          return {
+            ...it,
+            materialScope: newScope,
+          };
+        }
+        return it;
+      })
+    );
+    setHasChanges(true);
+    setSaveSuccessNotice(false);
+  };
+
+  const handleMoveItemToBab = (atpItemId: string, targetBabTitle: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === atpItemId) {
+          return {
+            ...it,
+            unitTitle: targetBabTitle,
+          };
+        }
+        return it;
+      })
+    );
+    setHasChanges(true);
+    setSaveSuccessNotice(false);
+  };
+
+  const handleAddEmptyBab = () => {
+    const nextNum = allBabTitles.length + 1;
+    const newTitle = `Bab ${nextNum}: (Judul Bab Baru)`;
+    setCustomBabList((prev) => [...prev, newTitle]);
+    setTargetUnitCount((prev) => Math.max(prev, allBabTitles.length + 1));
+    setHasChanges(true);
+    setSaveSuccessNotice(false);
+  };
+
+  const handleRemoveBab = (babTitle: string) => {
+    // Remove from customBabList
+    setCustomBabList((prev) => prev.filter((b) => b.trim() !== babTitle.trim()));
+
+    // Unassign any items that were assigned to this Bab
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.unitTitle?.trim() === babTitle.trim()) {
+          return {
+            ...it,
+            unitTitle: '',
+          };
+        }
+        return it;
+      })
+    );
+
+    setTargetUnitCount((prev) => Math.max(1, prev - 1));
+    setHasChanges(true);
+    setSaveSuccessNotice(false);
+  };
+
+  const handleTargetCountChange = (newCount: number) => {
+    const clamped = Math.max(1, Math.min(15, newCount));
+    setTargetUnitCount(clamped);
+
+    // If newCount is greater than current allBabTitles length, add placeholder Bab containers
+    if (clamped > allBabTitles.length) {
+      const toAdd = clamped - allBabTitles.length;
+      const newSlots: string[] = [];
+      for (let i = 1; i <= toAdd; i++) {
+        newSlots.push(`Bab ${allBabTitles.length + i}`);
+      }
+      setCustomBabList((prev) => [...prev, ...newSlots]);
+      setHasChanges(true);
+    }
+  };
+
+  // AI Generation Implementation (Supports "Generate Pemetaan" and "Lengkapi yang Kosong")
+  const handleExecuteAI = async (mode: 'ALL' | 'EMPTY_ONLY') => {
     if (items.length === 0) {
       setAiError('Daftar langkah ATP masih kosong. Susun ATP terlebih dahulu.');
       return;
     }
 
     setIsGenerating(true);
+    setGeneratingMode(mode);
     setAiError(null);
     setAiSuccessMessage(null);
 
     try {
-      // Build teacher unit constraints: only pass non-empty teacher Bab names
+      // Build teacher unit constraints from currently defined Bab titles
       const teacherConstraints: TeacherUnitConstraint[] = [];
-      teacherBabList.forEach((title, idx) => {
-        if (title && title.trim().length > 0) {
+      allBabTitles.forEach((title, idx) => {
+        if (title && title.trim().length > 0 && !title.includes('(Judul Bab Baru)')) {
           teacherConstraints.push({
             unitIndex: idx + 1,
             unitTitle: title.trim(),
@@ -230,35 +296,45 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
       });
 
       const payload = {
-        atpItems: items.map((it, idx) => ({
-          id: it.id,
-          stepNumber: it.stepNumber || idx + 1,
-          tpCode: it.tpCode || `TP-${idx + 1}`,
-          tpStatement: it.tpStatement || tpMap.get(it.tpId)?.statement || '',
-          unitTitle: it.unitTitle?.trim() || undefined,
-          materialScope: it.materialScope?.trim() || undefined,
-        })),
+        atpItems: items.map((it, idx) => {
+          const tpItem = tpMap.get(it.tpId);
+          return {
+            id: it.id,
+            stepNumber: it.stepNumber || idx + 1,
+            tpCode: it.tpCode || tpItem?.code || `TP-${idx + 1}`,
+            tpStatement: it.tpStatement || tpItem?.statement || '',
+            tpContentScope: tpItem?.contentScope || '',
+            unitTitle: it.unitTitle?.trim() || undefined,
+            materialScope: it.materialScope?.trim() || undefined,
+          };
+        }),
         subject: academicSetting?.subject || 'Mata Pelajaran',
         grade: academicSetting?.grade || 'Kelas',
         phase: academicSetting?.phase || 'Fase',
         targetUnitCount,
         teacherUnits: teacherConstraints,
+        completeEmptyOnly: mode === 'EMPTY_ONLY',
       };
 
       const result = await generateATPMappingWithAI(payload);
 
-      // Update teacherBabList with AI proposed units if empty
+      // Collect new units from AI
       if (result.units && Array.isArray(result.units) && result.units.length > 0) {
-        setTeacherBabList((prevList) => {
+        setCustomBabList((prevList) => {
           const updated = [...prevList];
           result.units.forEach((u) => {
             const idx = u.unitIndex - 1;
             if (idx >= 0 && idx < updated.length) {
-              // Preserve non-empty teacher value! Only fill empty
-              if (!updated[idx] || updated[idx].trim().length === 0) {
+              // Preserve non-empty teacher value! Only fill empty or default placeholders
+              if (
+                !updated[idx] ||
+                updated[idx].trim().length === 0 ||
+                updated[idx].includes('(Judul Bab Baru)') ||
+                updated[idx] === `Bab ${u.unitIndex}`
+              ) {
                 updated[idx] = u.unitTitle;
               }
-            } else if (idx >= updated.length && idx < targetUnitCount) {
+            } else {
               updated.push(u.unitTitle);
             }
           });
@@ -266,10 +342,10 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
         });
       }
 
-      // CRITICAL MERGE SAFETY RULE:
+      // STRICT MERGE SAFETY RULE:
       // Teacher input has highest priority!
       // AI may COMPLETE missing mapping but must NEVER overwrite a non-empty teacher value!
-      let completedCount = 0;
+      let filledCount = 0;
       setItems((prevItems) => {
         return prevItems.map((currentItem) => {
           const aiMapping = result.mappings.find((m) => m.atpItemId === currentItem.id);
@@ -282,7 +358,7 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
           const isScopeEmpty = !currentScope || currentScope.length === 0;
 
           if (isUnitEmpty || isScopeEmpty) {
-            completedCount++;
+            filledCount++;
           }
 
           // Strict preservation:
@@ -298,14 +374,18 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
       });
 
       setHasChanges(true);
-      setAiSuccessMessage(
-        `AI berhasil menyusun pemetaan untuk ${targetUnitCount} Bab. Nilai yang sudah Anda isi tetap dipertahankan secara utuh.`
-      );
+      const successText =
+        mode === 'EMPTY_ONLY'
+          ? `AI berhasil melengkapi bidang kosong pada pemetaan. Nilai yang sudah Anda isi tetap aman.`
+          : `AI berhasil menyusun pemetaan untuk ${targetUnitCount} Bab. Seluruh nilai yang sudah Anda isi tetap dipertahankan.`;
+
+      setAiSuccessMessage(successText);
       setTimeout(() => setAiSuccessMessage(null), 6000);
     } catch (err: any) {
-      setAiError(err.message || 'Gagal menghasilkan pemetaan Unit/Bab dengan AI.');
+      setAiError(err.message || 'Gagal menyusun pemetaan Unit/Bab dengan AI.');
     } finally {
       setIsGenerating(false);
+      setGeneratingMode(null);
     }
   };
 
@@ -356,7 +436,7 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
               </h3>
             </div>
             <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-              Petakan alur tujuan pembelajaran (ATP) ke dalam <strong>Unit / Bab operasional</strong> dan tentukan fokus <strong>Lingkup Materi Inti</strong>. Anda dapat menentukan nama Bab sendiri, menggunakan bantuan AI terarah, atau memetakan secara manual.
+              Kelompokkan langkah-langkah Alur Tujuan Pembelajaran (ATP) ke dalam <strong>Unit / Bab</strong> dan rumuskan fokus <strong>Lingkup Materi Inti</strong>. Setiap Bab menjadi wadah tematis yang memayungi langkah ATP secara logis.
             </p>
           </div>
 
@@ -374,7 +454,7 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
           </div>
         </div>
 
-        {/* Status / Saved Alert */}
+        {/* Status Alerts */}
         {saveSuccessNotice && (
           <div className="mt-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
             <Check className="w-4 h-4 text-emerald-600" />
@@ -390,28 +470,13 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
         )}
       </div>
 
-      {/* Teacher-Directed AI Generator Control Card */}
+      {/* Top Controls: Target Count, AI Buttons & Add Bab */}
       <div className="bg-white rounded-2xl border border-indigo-100 shadow-xs p-5 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-indigo-600" />
-                <span>Asisten Pemetaan Unit AI</span>
-              </span>
-              <h4 className="text-sm font-bold text-slate-900">
-                Pengaturan Target Bab & Pemetaan Otomatis
-              </h4>
-            </div>
-            <p className="text-xs text-slate-500">
-              Tentukan target jumlah Bab dan ketik nama Bab pilihan Anda (opsional). AI akan mempertahankan input Anda dan melengkapi sisanya secara proporsional.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            {/* Target Count Input */}
-            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-              <label htmlFor="target-unit-count" className="text-xs font-bold text-slate-700 whitespace-nowrap">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* Target Count Input */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200">
+              <label htmlFor="target-unit-count" className="text-xs font-bold text-slate-800 whitespace-nowrap">
                 Target Jumlah Bab:
               </label>
               <div className="flex items-center gap-1">
@@ -419,7 +484,7 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
                   type="button"
                   onClick={() => handleTargetCountChange(targetUnitCount - 1)}
                   disabled={targetUnitCount <= 1 || isGenerating}
-                  className="w-6 h-6 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xs font-bold disabled:opacity-40"
+                  className="w-7 h-7 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xs font-bold disabled:opacity-40 cursor-pointer"
                 >
                   -
                 </button>
@@ -431,31 +496,43 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
                   value={targetUnitCount}
                   onChange={(e) => handleTargetCountChange(parseInt(e.target.value, 10) || 1)}
                   disabled={isGenerating}
-                  className="w-12 text-center text-xs font-bold py-0.5 rounded-md border border-slate-300 bg-white"
+                  className="w-12 text-center text-xs font-bold py-1 rounded-md border border-slate-300 bg-white"
                 />
                 <button
                   type="button"
                   onClick={() => handleTargetCountChange(targetUnitCount + 1)}
                   disabled={targetUnitCount >= 15 || isGenerating}
-                  className="w-6 h-6 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xs font-bold disabled:opacity-40"
+                  className="w-7 h-7 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xs font-bold disabled:opacity-40 cursor-pointer"
                 >
                   +
                 </button>
               </div>
             </div>
 
-            {/* AI Generate Button */}
+            <button
+              type="button"
+              onClick={handleAddEmptyBab}
+              disabled={isGenerating}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs font-bold transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Bab Baru</span>
+            </button>
+          </div>
+
+          {/* AI Action Buttons */}
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
               id="btn-generate-ai-mapping"
               type="button"
-              onClick={handleGenerateAIMapping}
+              onClick={() => handleExecuteAI('ALL')}
               disabled={isGenerating || items.length === 0}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 shadow-xs transition cursor-pointer disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 shadow-xs transition cursor-pointer disabled:cursor-not-allowed"
             >
-              {isGenerating ? (
+              {isGenerating && generatingMode === 'ALL' ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Menyusun Pemetaan AI...</span>
+                  <span>Menyusun Pemetaan...</span>
                 </>
               ) : (
                 <>
@@ -464,12 +541,40 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
                 </>
               )}
             </button>
+
+            <button
+              id="btn-complete-missing-mapping"
+              type="button"
+              onClick={() => handleExecuteAI('EMPTY_ONLY')}
+              disabled={isGenerating || items.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 disabled:bg-slate-100 disabled:text-slate-400 shadow-2xs transition cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isGenerating && generatingMode === 'EMPTY_ONLY' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-700" />
+                  <span>Melengkapi...</span>
+                </>
+              ) : (
+                <>
+                  <ListPlus className="w-4 h-4 text-indigo-700" />
+                  <span>Lengkapi yang Kosong</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* AI Alerts */}
+        {/* Informational Guidance Notice */}
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 flex items-start gap-2.5 text-xs text-slate-600">
+          <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+          <p>
+            <strong>Prinsip Otoritas:</strong> Guru memegang otoritas penuh. Setiap nama Bab atau Lingkup Materi yang Anda isi tidak akan pernah ditimpa oleh AI. Anda dapat memindahkan butir ATP antar-Bab menggunakan pemilih tujuan pada tiap baris.
+          </p>
+        </div>
+
+        {/* AI Error Alert */}
         {aiError && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center justify-between gap-2">
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center justify-between gap-2 animate-fadeIn">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{aiError}</span>
@@ -477,244 +582,207 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
             <button
               type="button"
               onClick={() => setAiError(null)}
-              className="text-xs font-bold text-rose-600 hover:underline"
+              className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
             >
               Tutup
             </button>
           </div>
         )}
 
+        {/* AI Success Message */}
         {aiSuccessMessage && (
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2">
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{aiSuccessMessage}</span>
           </div>
         )}
+      </div>
 
-        {/* Teacher Directed Bab Name Inputs */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setIsBabListOpen(!isBabListOpen)}
-              className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-indigo-600 cursor-pointer"
-            >
-              <span>Daftar Nama Bab ({targetUnitCount} Bab Target)</span>
-              {isBabListOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
+      {/* Overview Stat Bar */}
+      <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+        <div className="flex items-center gap-2 font-semibold">
+          <Layers className="w-4 h-4 text-blue-700" />
+          <span>Struktur Unit: {babContainers.length} Bab Terdaftar</span>
+        </div>
+        <div>
+          <span>Terpetakan: <strong className="text-slate-800">{mappedCount}</strong> dari {items.length} Langkah ATP</span>
+        </div>
+      </div>
 
-            <span className="text-[11px] text-slate-400">
-              Ketik nama Bab jika ingin menentukan sendiri, kosongkan agar diusulkan oleh AI
-            </span>
-          </div>
-
-          {isBabListOpen && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
-              {teacherBabList.map((babTitle, bIdx) => (
-                <div
-                  key={`bab-slot-${bIdx}`}
-                  className="flex items-center gap-2 bg-slate-50/90 p-2 rounded-xl border border-slate-200"
-                >
-                  <span className="px-2 py-1 rounded-lg bg-indigo-100 text-indigo-900 text-[11px] font-bold shrink-0">
-                    Bab {bIdx + 1}
-                  </span>
+      {/* Bab-Centered Editor: List of Bab Containers */}
+      <div className="space-y-5">
+        {babContainers.map((bab, bIdx) => (
+          <div
+            key={`bab-container-${bab.title || bIdx}`}
+            className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden transition"
+          >
+            {/* Bab Container Header */}
+            <div className="bg-slate-50/90 p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-1">
+                <span className="px-3 py-1 rounded-xl bg-blue-900 text-white font-bold text-xs shrink-0 shadow-2xs">
+                  BAB {bIdx + 1}
+                </span>
+                <div className="flex-1 flex items-center gap-2">
+                  <label htmlFor={`bab-title-input-${bIdx}`} className="sr-only">Judul Bab</label>
                   <input
+                    id={`bab-title-input-${bIdx}`}
                     type="text"
-                    value={babTitle}
-                    placeholder={`e.g. Bab ${bIdx + 1}: Judul Materi...`}
-                    onChange={(e) => handleTeacherBabNameChange(bIdx, e.target.value)}
-                    className="w-full text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-medium"
+                    value={bab.title}
+                    placeholder={`Judul Bab ${bIdx + 1}...`}
+                    onChange={(e) => handleRenameBab(bab.title, e.target.value)}
+                    className="w-full text-sm font-bold text-slate-900 px-3 py-1.5 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 bg-white"
                   />
-                  {targetUnitCount > 1 && (
-                    <button
-                      type="button"
-                      title="Hapus slot Bab ini"
-                      onClick={() => handleRemoveBabSlot(bIdx)}
-                      className="p-1 text-slate-400 hover:text-rose-600 rounded-md shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
-              ))}
+              </div>
 
-              {targetUnitCount < 15 && (
-                <button
-                  type="button"
-                  onClick={handleAddBabSlot}
-                  className="flex items-center justify-center gap-1.5 p-2 rounded-xl border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs font-bold transition cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Tambah Slot Bab ({targetUnitCount + 1})</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] font-bold text-slate-500 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                  {bab.items.length} Langkah ATP
+                </span>
+
+                {bab.items.length === 0 && (
+                  <button
+                    type="button"
+                    title="Hapus Bab Kosong Ini"
+                    onClick={() => handleRemoveBab(bab.title)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-bold transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Bab</span>
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Visual Unit Grouping Overview */}
-      <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-blue-600" />
-            <span>Ringkasan Pengelompokan Unit / Bab ({Object.keys(unitStats.groups).length} Unit Terpetakan)</span>
-          </h4>
-          <span className="text-[11px] text-slate-500 font-medium">
-            Total {items.length} Langkah ATP
-          </span>
-        </div>
+            {/* List of ATP Steps Assigned to This Bab */}
+            {bab.items.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400 italic bg-white">
+                Belum ada langkah ATP yang ditugaskan ke Bab ini. Pindahkan langkah ATP dari bab lain atau dari kelompok belum terpetakan.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {bab.items.map((item, itemIdx) => {
+                  const tpItem = item.tpId ? tpMap.get(item.tpId) : undefined;
+                  const tpCode = item.tpCode || tpItem?.code || `TP-${itemIdx + 1}`;
+                  const tpStatement = item.tpStatement || tpItem?.statement || '-';
+                  const tpContentScope = tpItem?.contentScope;
 
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(unitStats.groups).map(([title, count]) => (
-            <div
-              key={title}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-blue-200/80 shadow-2xs text-xs"
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-600" />
-              <span className="font-bold text-slate-800">{title}</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-800 font-bold text-[10px]">
-                {count} Langkah
-              </span>
-            </div>
-          ))}
-
-          {unitStats.unassigned > 0 && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="font-semibold">Belum ditentukan Unit/Bab</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-amber-200/60 font-bold text-[10px]">
-                {unitStats.unassigned} Langkah
-              </span>
-            </div>
-          )}
-
-          {items.length === 0 && (
-            <span className="text-xs text-slate-400 italic">Belum ada butir ATP yang disusun.</span>
-          )}
-        </div>
-      </div>
-
-      {/* Datalist for Unit Suggestions */}
-      <datalist id="existing-units-list">
-        {existingUnitTitles.map((ut) => (
-          <option key={ut} value={ut} />
-        ))}
-      </datalist>
-
-      {/* Editable Mapping Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-blue-700" />
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Matriks Alur Tujuan Pembelajaran & Pemetaan Unit
-            </h4>
-          </div>
-          <span className="text-[11px] text-slate-500">
-            Anda dapat mengubah Unit/Bab dan Lingkup Materi secara manual kapan saja pada baris tabel di bawah.
-          </span>
-        </div>
-
-        {items.length === 0 ? (
-          <div className="p-10 text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-sm font-bold text-slate-700">Data ATP Masih Kosong</p>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Silakan kembali ke tahap ATP untuk menyusun butir alur pembelajaran sebelum melakukan pemetaan unit.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {items.map((item, idx) => {
-              const tpItem = item.tpId ? tpMap.get(item.tpId) : undefined;
-              const tpCode = item.tpCode || tpItem?.code || `TP-${idx + 1}`;
-              const tpStatement = item.tpStatement || tpItem?.statement || '-';
-
-              const prevItem = idx > 0 ? items[idx - 1] : null;
-              const isNewGroup = !prevItem || prevItem.unitTitle?.trim() !== item.unitTitle?.trim();
-
-              return (
-                <React.Fragment key={item.id || `atp-map-${idx}`}>
-                  {/* Visual Unit Break Header when Unit changes */}
-                  {isNewGroup && (
-                    <div className="bg-slate-100/70 px-4 py-2 border-y border-slate-200/60 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 font-bold text-slate-800">
-                        <Tag className="w-3.5 h-3.5 text-blue-600" />
-                        <span>
-                          {item.unitTitle?.trim() ? item.unitTitle.trim() : 'Kelompok: (Belum Diberi Unit/Bab)'}
-                        </span>
+                  return (
+                    <div
+                      key={item.id || `atp-${item.stepNumber || itemIdx}`}
+                      className="p-4 sm:p-5 hover:bg-slate-50/40 transition flex flex-col lg:flex-row lg:items-start gap-4"
+                    >
+                      {/* Column 1: Step Number & TP Code */}
+                      <div className="w-full lg:w-44 shrink-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-blue-900 text-white font-bold text-xs shadow-2xs">
+                            Langkah {item.stepNumber || itemIdx + 1}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-800 font-bold text-xs">
+                            {tpCode}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        Mulai Langkah #{item.stepNumber || idx + 1}
-                      </span>
-                    </div>
-                  )}
 
-                  <div className="p-4 sm:p-5 hover:bg-slate-50/50 transition flex flex-col lg:flex-row lg:items-start gap-4">
-                    {/* Column 1: Step Number & TP Code */}
-                    <div className="w-full lg:w-48 shrink-0 space-y-1.5">
+                      {/* Column 2: Canonical TP Statement */}
+                      <div className="flex-1 space-y-1">
+                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          Tujuan Pembelajaran (Canonical TP)
+                        </div>
+                        <p className="text-xs text-slate-800 leading-relaxed font-normal">
+                          {tpStatement}
+                        </p>
+                        {tpContentScope && (
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1 pt-0.5">
+                            <span className="font-semibold text-slate-600">Materi TP Asal:</span>
+                            <span>{tpContentScope}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Column 3: Editable Lingkup Materi */}
+                      <div className="w-full lg:w-80 shrink-0 space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                          Lingkup Materi Inti <span className="text-blue-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={item.materialScope || ''}
+                          placeholder="e.g. Ide Pokok dan Struktur Teks"
+                          onChange={(e) => handleMaterialScopeChange(item.id, e.target.value)}
+                          className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 bg-white"
+                        />
+                      </div>
+
+                      {/* Column 4: Move / Reassign Dropdown */}
+                      <div className="w-full lg:w-48 shrink-0 space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-500 uppercase">
+                          Pindahkan ke:
+                        </label>
+                        <select
+                          value={item.unitTitle || ''}
+                          onChange={(e) => handleMoveItemToBab(item.id, e.target.value)}
+                          className="w-full text-xs font-bold text-slate-800 bg-white px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 cursor-pointer"
+                        >
+                          {allBabTitles.map((targetTitle, tIdx) => (
+                            <option key={`target-opt-${tIdx}`} value={targetTitle}>
+                              Bab {tIdx + 1}: {targetTitle}
+                            </option>
+                          ))}
+                          <option value="">-- Belum Dikelompokkan --</option>
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Unassigned ATP Items Container (If Any) */}
+        {unassignedItems.length > 0 && (
+          <div className="bg-amber-50/50 rounded-2xl border border-amber-200 shadow-xs overflow-hidden">
+            <div className="bg-amber-100/70 p-4 border-b border-amber-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-700" />
+                <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                  Langkah ATP Belum Dikelompokkan ke Bab ({unassignedItems.length} Langkah)
+                </h4>
+              </div>
+              <span className="text-[11px] text-amber-800 font-medium">
+                Pilih Bab tujuan untuk menugaskan langkah-langkah ini
+              </span>
+            </div>
+
+            <div className="divide-y divide-amber-100/60 bg-white">
+              {unassignedItems.map((item, uIdx) => {
+                const tpItem = item.tpId ? tpMap.get(item.tpId) : undefined;
+                const tpCode = item.tpCode || tpItem?.code || `TP-${uIdx + 1}`;
+                const tpStatement = item.tpStatement || tpItem?.statement || '-';
+
+                return (
+                  <div
+                    key={item.id || `unassigned-${item.stepNumber || uIdx}`}
+                    className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-start gap-4"
+                  >
+                    <div className="w-full lg:w-44 shrink-0 space-y-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-blue-900 text-white font-bold text-xs shadow-2xs">
-                          Langkah {item.stepNumber || idx + 1}
+                        <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-amber-800 text-white font-bold text-xs">
+                          Langkah {item.stepNumber || uIdx + 1}
                         </span>
-                        <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-800 font-bold text-xs">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900 font-bold text-xs">
                           {tpCode}
                         </span>
                       </div>
                     </div>
 
-                    {/* Column 2: TP Statement */}
                     <div className="flex-1 space-y-1">
-                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                        Rumusan Tujuan Pembelajaran (Canonical TP)
-                      </div>
-                      <p className="text-xs text-slate-800 leading-relaxed font-normal">
+                      <p className="text-xs text-slate-800 leading-relaxed">
                         {tpStatement}
                       </p>
                     </div>
 
-                    {/* Column 3: Editable Unit / Bab */}
-                    <div className="w-full lg:w-72 shrink-0 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase">
-                          Unit / Bab Operasional <span className="text-blue-600">*</span>
-                        </label>
-                        {teacherBabList.some((b) => b.trim().length > 0) && (
-                          <select
-                            value={item.unitTitle || ''}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleFieldChange(idx, 'unitTitle', e.target.value);
-                              }
-                            }}
-                            className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 cursor-pointer"
-                          >
-                            <option value="">Pilih Bab...</option>
-                            {teacherBabList
-                              .filter((b) => b.trim().length > 0)
-                              .map((b, bIdx) => (
-                                <option key={`opt-bab-${bIdx}`} value={b}>
-                                  {b}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        list="existing-units-list"
-                        value={item.unitTitle || ''}
-                        placeholder="e.g. Bab 1: Mengenal Bilangan"
-                        onChange={(e) => handleFieldChange(idx, 'unitTitle', e.target.value)}
-                        className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 bg-white"
-                      />
-                      <span className="text-[10px] text-slate-400 block">
-                        Pilih dari daftar atau ketik bab baru
-                      </span>
-                    </div>
-
-                    {/* Column 4: Editable Lingkup Materi */}
                     <div className="w-full lg:w-80 shrink-0 space-y-1">
                       <label className="block text-[11px] font-bold text-slate-700 uppercase">
                         Lingkup Materi Inti
@@ -722,24 +790,39 @@ export const ATPUnitMappingManager: React.FC<ATPUnitMappingManagerProps> = ({
                       <input
                         type="text"
                         value={item.materialScope || ''}
-                        placeholder="e.g. Bilangan Cacah sampai 100"
-                        onChange={(e) => handleFieldChange(idx, 'materialScope', e.target.value)}
-                        className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 bg-white"
+                        placeholder="e.g. Lingkup materi..."
+                        onChange={(e) => handleMaterialScopeChange(item.id, e.target.value)}
+                        className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-amber-600 bg-white"
                       />
-                      <span className="text-[10px] text-slate-400 block">
-                        Fokus konten materi untuk asesmen & modul ajar
-                      </span>
+                    </div>
+
+                    <div className="w-full lg:w-48 shrink-0 space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                        Tugaskan ke Bab:
+                      </label>
+                      <select
+                        value={item.unitTitle || ''}
+                        onChange={(e) => handleMoveItemToBab(item.id, e.target.value)}
+                        className="w-full text-xs font-bold text-indigo-900 bg-indigo-50/80 px-3 py-2 rounded-xl border border-indigo-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-600 cursor-pointer"
+                      >
+                        <option value="">Pilih Bab Tujuan...</option>
+                        {allBabTitles.map((targetTitle, tIdx) => (
+                          <option key={`unassign-opt-${tIdx}`} value={targetTitle}>
+                            Bab {tIdx + 1}: {targetTitle}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                </React.Fragment>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
 
       {/* Navigation Buttons */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-200">
         <button
           id="btn-back-to-atp"
           type="button"

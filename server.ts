@@ -934,9 +934,9 @@ ${atpItems
     (item: any, idx: number) =>
       `${idx + 1}. [ID: ${item.id}] Langkah #${item.stepNumber || idx + 1} (Kode TP: ${item.tpCode || '-'}): "${
         item.tpStatement || '-'
-      }" ${item.unitTitle ? `[Kustom Guru Unit: "${item.unitTitle}"]` : ''} ${
-        item.materialScope ? `[Kustom Guru Materi: "${item.materialScope}"]` : ''
-      }`
+      }" ${item.tpContentScope ? `[Lingkup Materi TP Asli: "${item.tpContentScope}"]` : ''} ${
+        item.unitTitle ? `[Kustom Guru Unit: "${item.unitTitle}"]` : ''
+      } ${item.materialScope ? `[Kustom Guru Materi: "${item.materialScope}"]` : ''}`
   )
   .join('\n')}
 

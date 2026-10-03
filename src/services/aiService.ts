@@ -468,6 +468,7 @@ export interface GenerateATPMappingParams {
     stepNumber?: number;
     tpCode: string;
     tpStatement?: string;
+    tpContentScope?: string;
     unitTitle?: string;
     materialScope?: string;
   }>;
@@ -476,6 +477,7 @@ export interface GenerateATPMappingParams {
   phase?: string;
   targetUnitCount?: number;
   teacherUnits?: TeacherUnitConstraint[];
+  completeEmptyOnly?: boolean;
 }
 
 export interface ATPMappingResult {
