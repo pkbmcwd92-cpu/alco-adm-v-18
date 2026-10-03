@@ -820,19 +820,26 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     return cleanStmt.length > 60 ? `${cleanStmt.substring(0, 57)}...` : cleanStmt || 'Materi Pembelajaran';
   };
 
+  const CROSS_CUTTING_TOKENS = new Set([
+    'profil', 'pelajar', 'pancasila', 'lulusan', 'karakter', 'evaluasi', 'diri', 
+    'refleksi', 'sikap', 'tanggung', 'jawab', 'kolaborasi', 'nilai', 'sosial', 
+    'moral', 'perilaku', 'akhlak', 'gotong', 'royong', 'mandiri', 'kreatif', 
+    'kritis', 'kebinekaan', 'spiritual', 'emosional'
+  ]);
+
+  const NEUTRAL_WORDS = new Set([
+    'dalam', 'pada', 'melalui', 'saat', 'kegiatan', 'aktivitas', 'pembelajaran',
+    'dan', 'atau', 'dengan', 'untuk', 'secara', 'yang', 'serta', 'ke', 'di', 'dari',
+    'sebagai', 'dapat', 'mampu', 'oleh', 'adalah', 'adapun', 'ini', 'itu', 'ia', 'mereka'
+  ]);
+
+  const SHARED_GENERIC_NEUTRAL_WORDS = new Set([...CROSS_CUTTING_TOKENS, ...NEUTRAL_WORDS]);
+
   const isCrossCuttingTp = (tp?: (typeof validTpItems)[0]): boolean => {
     if (!tp) return false;
     const full = `${tp.statement || ''} ${tp.contentScope || ''} ${tp.elementName || ''}`.toLowerCase();
-    return (
-      full.includes('profil pelajar pancasila') ||
-      full.includes('profil lulusan') ||
-      full.includes('karakter') ||
-      full.includes('tanggung jawab') ||
-      full.includes('refleksi') ||
-      full.includes('evaluasi diri') ||
-      full.includes('sikap') ||
-      full.includes('kolaborasi')
-    );
+    const cleanWords = full.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    return cleanWords.some((w) => CROSS_CUTTING_TOKENS.has(w));
   };
 
   const areTpsSemanticallyRelated = (
@@ -1176,20 +1183,8 @@ export function fallbackGenerateCanonicalATPUnitMapping(
         ccTp.scopeCode.trim().toUpperCase() === 'MAT' || 
         ccTp.scopeCode.trim().toUpperCase() === 'GEN';
 
-      const genericAndNeutralWords = new Set([
-        // generic cross-cutting terms
-        'karakter', 'evaluasi', 'diri', 'refleksi', 'sikap', 'tanggung', 'jawab', 
-        'nilai', 'sosial', 'moral', 'perilaku', 'akhlak', 'gotong', 'royong', 
-        'mandiri', 'kreatif', 'kritis', 'kebinekaan', 'spiritual', 'emosional', 'profil',
-        
-        // neutral / connecting words
-        'dalam', 'pada', 'melalui', 'saat', 'kegiatan', 'aktivitas', 'pembelajaran',
-        'dan', 'atau', 'dengan', 'untuk', 'secara', 'yang', 'serta', 'ke', 'di', 'dari',
-        'sebagai', 'dapat', 'mampu', 'oleh', 'adalah', 'adapun', 'ini', 'itu', 'ia', 'mereka'
-      ]);
-
       const cleanWords = ccScopeClean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-      const hasSpecificTopic = cleanWords.some(w => w.length > 2 && !genericAndNeutralWords.has(w));
+      const hasSpecificTopic = cleanWords.some(w => w.length > 2 && !SHARED_GENERIC_NEUTRAL_WORDS.has(w));
 
       const isTrulyGlobal = unspecificScopeCode && (!ccScopeClean || ccScopeClean === '' || !hasSpecificTopic);
 
