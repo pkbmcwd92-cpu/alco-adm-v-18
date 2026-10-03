@@ -71,6 +71,25 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
 export interface FallbackGenerateTPParams {
   cpGeneral?: string;
   cpElements?: { name: string; content: string }[];
+  cpAnalysisItems?: Array<{
+    id: string;
+    elementId?: string;
+    elementName?: string;
+    cpCompetence?: string;
+    materialScope?: string;
+    suggestedTp?: string;
+  }>;
+  existingTps?: Array<{
+    id: string;
+    code?: string;
+    elementName?: string;
+    statement: string;
+    competence?: string;
+    contentScope?: string;
+    p3Dimensions?: string[];
+    cpAnalysisItemIds?: string[];
+    order?: number;
+  }>;
   subject?: string;
   grade?: string;
   phase?: string;
@@ -81,17 +100,20 @@ export interface FallbackGenerateTPParams {
 export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
   const cpGeneralText = (params.cpGeneral || '').trim();
   const validElements = (params.cpElements || []).filter((e) => e && e.content && e.content.trim().length > 0);
+  const cpAnalysisItems = Array.isArray(params.cpAnalysisItems) ? params.cpAnalysisItems : [];
+  const existingTps = Array.isArray(params.existingTps) ? params.existingTps : [];
 
   // INSUFFICIENT CANONICAL SOURCE -> FAIL/BLOCK (return empty)
-  if (!cpGeneralText && validElements.length === 0) {
-    return [];
+  if (!cpGeneralText && validElements.length === 0 && cpAnalysisItems.length === 0) {
+    return existingTps;
   }
 
-  const subject = params.subject || '';
   const grade = params.grade || '';
-  const count = params.count || 4;
+  const gradeDigits = grade.replace(/\D/g, '');
+  const codePrefix = gradeDigits ? `TP ${gradeDigits}.` : 'TP ';
+  let counter = 1;
 
-  const tpItems: Array<{
+  const rawGeneratedItems: Array<{
     code: string;
     elementName: string;
     statement: string;
@@ -99,45 +121,130 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
     contentScope: string;
     p3Dimensions: string[];
     graduateProfileDimensions?: string[];
+    cpAnalysisItemIds: string[];
   }> = [];
 
-  const gradeDigits = grade.replace(/\D/g, '');
-  const codePrefix = gradeDigits ? `TP ${gradeDigits}.` : 'TP ';
-  let counter = 1;
+  if (cpAnalysisItems.length > 0) {
+    // Generate derived TP directly from each CP Analysis item
+    cpAnalysisItems.forEach((cpa) => {
+      const elemName = cpa.elementName?.trim() || '';
+      const comp = cpa.cpCompetence?.trim() || 'Memahami & Menerapkan';
+      const scope = cpa.materialScope?.trim() || '';
+      const suggested = cpa.suggestedTp?.trim();
 
-  if (validElements.length > 0) {
-    for (let i = 0; i < validElements.length && tpItems.length < count; i++) {
-      const elem = validElements[i];
-      const elemName = elem.name ? elem.name.trim() : '';
-      const cleanContent = elem.content ? elem.content.slice(0, 100).trim() : '';
+      const statement = suggested && suggested.length > 10
+        ? suggested
+        : `Peserta didik mampu ${comp.toLowerCase()} ${scope} secara mandiri dan bernalar kritis.`;
 
-      if (!cleanContent) continue;
-
-      tpItems.push({
+      rawGeneratedItems.push({
         code: `${codePrefix}${counter++}`,
         elementName: elemName,
-        statement: `Murid mampu memahami dan menerapkan konsep ${elemName ? elemName.toLowerCase() + ' terkait ' : ''}${cleanContent} secara mandiri dan kritis.`,
+        statement,
+        competence: comp,
+        contentScope: scope,
+        p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
+        graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
+        cpAnalysisItemIds: cpa.id ? [cpa.id] : [],
+      });
+    });
+  } else if (validElements.length > 0) {
+    validElements.forEach((elem) => {
+      const elemName = elem.name ? elem.name.trim() : '';
+      const cleanContent = elem.content ? elem.content.slice(0, 100).trim() : '';
+      if (!cleanContent) return;
+
+      rawGeneratedItems.push({
+        code: `${codePrefix}${counter++}`,
+        elementName: elemName,
+        statement: `Peserta didik mampu memahami dan menerapkan konsep ${elemName ? elemName.toLowerCase() + ' terkait ' : ''}${cleanContent} secara mandiri dan bernalar kritis.`,
         competence: 'Memahami & Menerapkan',
         contentScope: cleanContent,
         p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
         graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
+        cpAnalysisItemIds: [],
       });
-    }
+    });
   } else if (cpGeneralText) {
-    // Generate derived TP from general CP statement without inventing fake element 'Umum'
-    tpItems.push({
+    rawGeneratedItems.push({
       code: `${codePrefix}${counter++}`,
       elementName: '',
-      statement: `Murid mampu memahami dan menjelaskan capaian ${cpGeneralText.slice(0, 100).trim()} secara komprehensif.`,
+      statement: `Peserta didik mampu memahami dan menjelaskan capaian ${cpGeneralText.slice(0, 100).trim()} secara komprehensif.`,
       competence: 'Memahami & Menjelaskan',
       contentScope: cpGeneralText.slice(0, 80).trim(),
       p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
       graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
+      cpAnalysisItemIds: [],
     });
   }
 
-  // Strictly return only what was derived from canonical source. NO filler TPs added.
-  return tpItems.slice(0, count);
+  // Safe merge with existingTps if provided
+  if (existingTps.length > 0) {
+    const matchedExistingIds = new Set<string>();
+    const merged: Array<any> = [];
+
+    for (let i = 0; i < rawGeneratedItems.length; i++) {
+      const gen = rawGeneratedItems[i];
+      let bestMatch: any = null;
+      let highestScore = 3;
+
+      for (const exist of existingTps) {
+        if (matchedExistingIds.has(exist.id)) continue;
+        let score = 0;
+
+        // cpAnalysisItemIds overlap
+        const genIds = gen.cpAnalysisItemIds || [];
+        const existIds = exist.cpAnalysisItemIds || [];
+        if (genIds.length > 0 && existIds.length > 0 && genIds.some((id) => existIds.includes(id))) {
+          score += 10;
+        }
+
+        // Element name match
+        if (gen.elementName && exist.elementName && gen.elementName.toLowerCase() === exist.elementName.toLowerCase()) {
+          score += 4;
+        }
+
+        // Content scope match
+        if (gen.contentScope && exist.contentScope && (gen.contentScope.toLowerCase().includes(exist.contentScope.toLowerCase()) || exist.contentScope.toLowerCase().includes(gen.contentScope.toLowerCase()))) {
+          score += 5;
+        }
+
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatch = exist;
+        }
+      }
+
+      if (bestMatch) {
+        matchedExistingIds.add(bestMatch.id);
+        merged.push({
+          ...bestMatch,
+          id: bestMatch.id, // Mandatory stable ID!
+          statement: bestMatch.statement || gen.statement,
+          competence: bestMatch.competence || gen.competence,
+          contentScope: bestMatch.contentScope || gen.contentScope,
+          elementName: bestMatch.elementName || gen.elementName,
+          p3Dimensions: bestMatch.p3Dimensions && bestMatch.p3Dimensions.length > 0 ? bestMatch.p3Dimensions : gen.p3Dimensions,
+          cpAnalysisItemIds: Array.from(new Set([...(bestMatch.cpAnalysisItemIds || []), ...(gen.cpAnalysisItemIds || [])])),
+        });
+      } else {
+        merged.push({
+          ...gen,
+          id: `tp-item-${Date.now()}-${i + 1}`,
+        });
+      }
+    }
+
+    // Preserve existing unmatched TPs
+    existingTps.forEach((exist) => {
+      if (!matchedExistingIds.has(exist.id)) {
+        merged.push(exist);
+      }
+    });
+
+    return merged.map((it, idx) => ({ ...it, order: idx + 1 }));
+  }
+
+  return rawGeneratedItems;
 }
 
 export interface FallbackGenerateATPParams {

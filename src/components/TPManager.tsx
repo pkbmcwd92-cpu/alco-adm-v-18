@@ -207,15 +207,6 @@ export const TPManager: React.FC<TPManagerProps> = ({
       return;
     }
 
-    if (
-      items.length > 0 &&
-      !confirm(
-        'Menghasilkan TP baru dengan AI akan menggantikan daftar TP saat ini. Lanjutkan?'
-      )
-    ) {
-      return;
-    }
-
     setIsGenerating(true);
     setGenerationError(null);
     recordDiagnosticEvent({
@@ -230,11 +221,11 @@ export const TPManager: React.FC<TPManagerProps> = ({
         cpGeneral: cp.generalDescription,
         cpElements: cp.elements || [],
         cpAnalysisItems: cpAnalysis?.items || [],
+        existingTps: items,
         subject: context.subject,
         grade: context.grade,
         phase: context.phase,
         curriculum: context.curriculum,
-        count: 4,
       });
 
       setItems(generated);
@@ -249,7 +240,7 @@ export const TPManager: React.FC<TPManagerProps> = ({
         subjectCode: context.subject,
         phase: context.phase,
         items: generated,
-        generatedBy: 'AI',
+        generatedBy: items.length > 0 ? (tp.generatedBy || 'AI_EDITED_BY_TEACHER') : 'AI',
         generatedAt: new Date().toISOString(),
         needsReview: false,
         reviewReason: undefined,
@@ -285,7 +276,13 @@ export const TPManager: React.FC<TPManagerProps> = ({
           needsReview: false,
         },
       });
-      showSaveNotice(val.isSiap ? 'AI membuat dan menyimpan TP. Status: SIAP.' : 'AI membuat dan menyimpan TP, tetapi masih perlu diperbaiki.');
+      showSaveNotice(
+        items.length > 0
+          ? 'AI berhasil melengkapi & menyelaraskan TP tanpa mengubah ID TP yang sudah ada.'
+          : val.isSiap
+          ? 'AI membuat dan menyimpan TP. Status: SIAP.'
+          : 'AI membuat dan menyimpan TP, tetapi masih perlu diperbaiki.'
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menghasilkan TP dengan AI';
       setGenerationError(msg);
@@ -586,18 +583,18 @@ export const TPManager: React.FC<TPManagerProps> = ({
               id="btn-ai-generate-tp"
               onClick={handleGenerateAI}
               disabled={isGenerating || isCpUnusable}
-              title={isCpUnusable ? `CP Berstatus ${cpVerStatus}` : 'Generate TP dengan AI'}
+              title={isCpUnusable ? `CP Berstatus ${cpVerStatus}` : items.length > 0 ? 'Lengkapi / Selaraskan TP dengan AI' : 'Generate TP dengan AI'}
               className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer disabled:opacity-50 self-start sm:self-auto"
             >
               {isGenerating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>AI Sedang Merumuskan TP...</span>
+                  <span>{items.length > 0 ? 'AI Sedang Menyelaraskan TP...' : 'AI Sedang Merumuskan TP...'}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Generate TP dari CP & Analisis (AI)</span>
+                  <span>{items.length > 0 ? 'Lengkapi / Selaraskan dengan AI' : 'Generate TP dari CP & Analisis (AI)'}</span>
                 </>
               )}
             </button>

@@ -15,6 +15,7 @@ import {
 } from './src/services/calendarProvider';
 import {
   fallbackAnalyzeCP,
+  fallbackGenerateTP,
   fallbackRefineText,
   fallbackGenerateATPMapping,
   fallbackGenerateCanonicalATPUnitMapping,
@@ -575,38 +576,50 @@ function validateAITPPayload(data: any): { isValid: boolean; reason?: string } {
   return { isValid: true };
 }
 
-// 2. Endpoint: AI Generate TP from CP
+// 2. Endpoint: AI Generate TP from CP & CP Analysis
 app.post('/api/ai/generate-tp', async (req, res) => {
-  const { cpGeneral, cpElements, cpAnalysisItems, subject, grade, phase, curriculum, count = 4 } = req.body || {};
+  const {
+    cpGeneral,
+    cpElements,
+    cpAnalysisItems = [],
+    existingTps = [],
+    subject,
+    grade,
+    phase,
+    curriculum,
+  } = req.body || {};
 
-  if (!cpGeneral && (!cpElements || cpElements.length === 0)) {
-    return res.status(400).json({ error: 'Capaian Pembelajaran (CP) harus diisi terlebih dahulu' });
+  if (!cpGeneral && (!cpElements || cpElements.length === 0) && (!cpAnalysisItems || cpAnalysisItems.length === 0)) {
+    return res.status(400).json({ error: 'Capaian Pembelajaran (CP) atau Analisis CP harus diisi terlebih dahulu' });
   }
+
+  const validAnalysisItems = Array.isArray(cpAnalysisItems) ? cpAnalysisItems : [];
+  const validAnalysisIdSet = new Set(validAnalysisItems.map((a: any) => String(a.id)).filter(Boolean));
 
   const apiKey = resolveApiKey(req);
-  if (!apiKey) {
-    return res.status(503).json({
-      success: false,
-      code: 'AI_NOT_CONFIGURED',
-      error: 'Layanan AI belum dikonfigurasi pada server.',
-    });
-  }
-
-  try {
-    const ai = createAIClient(apiKey);
-    const prompt = `Anda adalah ahli perancangan kurikulum pendidikan nasional Indonesia.
+  if (apiKey) {
+    try {
+      const ai = createAIClient(apiKey);
+      const prompt = `Anda adalah ahli perancangan kurikulum pendidikan nasional Indonesia (Kurikulum Merdeka).
 Tugas Anda adalah merumuskan Tujuan Pembelajaran (TP) yang diturunkan SECARA KETAT dan EKSPLISIT dari Capaian Pembelajaran (CP) dan Hasil Analisis CP yang diberikan di bawah ini.
 
-PERINGATAN PENTING:
-- TP HARUS mencakup Kompetensi (kemampuan/keterampilan) dan Lingkup Materi (konten esensial).
-- Formula TP yang baik: "Murid mampu [Kompetensi/KKO] [Lingkup Materi] melalui [Konteks/Aktivitas/Kondisi] dengan [Kriteria/Tepat]."
-- TP harus dapat diobservasi dan diukur (mengacu pada Taksonomi Bloom / Anderson atau Marzano).
-- Jangan membuat TP yang menyimpang dari CP yang tersimpan.
+PRINSIP PENETAPAN TP:
+1. Jumlah dan fokus TP ditentukan secara murni dari kebutuhan ketercakupan elemen CP dan Analisis CP, BUKAN berdasarkan kuota atau target angka tertentu.
+2. Setiap TP HARUS memuat:
+   - Kompetensi (KKO yang terukur, misal Taksonomi Bloom/Anderson).
+   - Lingkup Materi (konten esensial yang dipelajari).
+3. Format rumusan TP: "Peserta didik mampu [Kompetensi/KKO] [Lingkup Materi] melalui [Konteks/Aktivitas/Kondisi] secara [Karakter/Kriteria]."
+4. Setiap butir TP HARUS menautkan ID butir Analisis CP yang menjadi rujukan langsung dalam field "cpAnalysisItemIds" (gunakan persis ID yang tercantum di bawah). JANGAN PERNAH mengarang ID Analisis CP fiktif.
+${
+  Array.isArray(existingTps) && existingTps.length > 0
+    ? `5. OTORITAS GURU (SELARASKAN TP EKSISTING): Guru telah memiliki daftar TP sebelumnya. Pertahankan rumusan dan kode TP yang sudah baik, selaraskan dengan Analisis CP, dan lengkapi atribut yang masih kosong atau belum optimal tanpa merusak struktur kerja guru.`
+    : ''
+}
 
 DATA PEMBELAJARAN:
 - Mata Pelajaran: ${subject || '-'}
 - Tingkat: ${grade || '-'} (${phase || '-'})
-- Kurikulum: ${curriculum || '-'}
+- Kurikulum: ${curriculum || 'Kurikulum Merdeka'}
 - Deskripsi CP Umum: ${cpGeneral || '-'}
 - Elemen-Elemen CP:
 ${
@@ -615,59 +628,102 @@ ${
     : 'Tidak ada rincian elemen.'
 }
 ${
-  cpAnalysisItems && Array.isArray(cpAnalysisItems) && cpAnalysisItems.length > 0
-    ? `\nANALISIS CP (Rujukan Kompetensi & Materi):
-${cpAnalysisItems.map((a: any, idx: number) => `${idx + 1}. [Elemen: ${a.elementName || '-'}] Kompetensi: ${a.cpCompetence || '-'} | Materi: ${a.materialScope || '-'} | Rekomendasi TP: ${a.suggestedTp || '-'}`).join('\n')}`
+  validAnalysisItems.length > 0
+    ? `\nHASIL ANALISIS CP (Rujukan Utama Kompetensi & Lingkup Materi):
+${validAnalysisItems.map((a: any, idx: number) => `${idx + 1}. [ID: ${a.id}] [Elemen: ${a.elementName || '-'}] Kompetensi: "${a.cpCompetence || '-'}" | Materi: "${a.materialScope || '-'}" | Rekomendasi TP: "${a.suggestedTp || '-'}"`).join('\n')}`
+    : ''
+}
+${
+  Array.isArray(existingTps) && existingTps.length > 0
+    ? `\nDAFTAR TP EKSISTING (Rujukan Guru):
+${existingTps.map((t: any, idx: number) => `${idx + 1}. [Kode: ${t.code || '-'}] [Elemen: ${t.elementName || '-'}] Rumusan: "${t.statement || t.description || '-'}" | Materi: "${t.contentScope || '-'}"`).join('\n')}`
     : ''
 }
 
-Buatlah sekitar ${count} hingga 6 butir Tujuan Pembelajaran (TP) yang sistematis.
+Rumuskan butir-butir TP yang sistematis dan mencakup seluruh esensi kompetensi dan materi di atas.
 Kembalikan respon dalam format JSON sesuai schema:`;
 
-    const response = await generateContentWithRetry(ai, {
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              code: { type: Type.STRING, description: 'Kode TP misal TP 4.1, TP 4.2' },
-              elementName: { type: Type.STRING, description: 'Nama Elemen CP yang menjadi rujukan' },
-              statement: { type: Type.STRING, description: 'Rumusan kalimat Tujuan Pembelajaran lengkap' },
-              competence: { type: Type.STRING, description: 'Kata Kerja Operasional / Kompetensi utama' },
-              contentScope: { type: Type.STRING, description: 'Lingkup Materi / Topik Pembelajaran' },
-              p3Dimensions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: 'Dimensi Profil Lulusan yang diasah (1-3 dimensi)',
+      const response = await generateContentWithRetry(ai, {
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                code: { type: Type.STRING, description: 'Kode TP misal TP 4.1, TP 4.2' },
+                elementName: { type: Type.STRING, description: 'Nama Elemen CP yang menjadi rujukan' },
+                statement: { type: Type.STRING, description: 'Rumusan kalimat Tujuan Pembelajaran lengkap' },
+                competence: { type: Type.STRING, description: 'Kata Kerja Operasional / Kompetensi utama' },
+                contentScope: { type: Type.STRING, description: 'Lingkup Materi / Topik Pembelajaran' },
+                p3Dimensions: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: 'Dimensi Profil Lulusan yang diasah (1-3 dimensi)',
+                },
+                cpAnalysisItemIds: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: 'Daftar ID butir Analisis CP yang menjadi rujukan',
+                },
               },
+              required: ['code', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions'],
             },
-            required: ['code', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions'],
           },
         },
-      },
-    });
+      });
 
-    const parsed = cleanAndParseJSON(response.text, null);
-    const validation = validateAITPPayload(parsed);
+      const parsed = cleanAndParseJSON(response.text, null);
+      const validation = validateAITPPayload(parsed);
 
-    if (!validation.isValid) {
-      console.warn('Gemini generate TP output invalid:', validation.reason);
-      return res.status(500).json({ error: `Respons AI tidak memenuhi kualifikasi struktur TP: ${validation.reason}` });
+      if (validation.isValid && Array.isArray(parsed)) {
+        // Lineage sanitization: filter out any invented CP Analysis IDs
+        const sanitizedItems = parsed.map((item: any) => {
+          const rawIds = Array.isArray(item.cpAnalysisItemIds) ? item.cpAnalysisItemIds : [];
+          let filteredIds = rawIds.filter((id: string) => validAnalysisIdSet.has(String(id)));
+
+          // If no valid IDs matched but CP Analysis items exist, match based on element or scope keyword
+          if (filteredIds.length === 0 && validAnalysisItems.length > 0) {
+            const itemElem = (item.elementName || '').toLowerCase().trim();
+            const itemScope = (item.contentScope || '').toLowerCase().trim();
+            const matchedAnalysis = validAnalysisItems.filter((a: any) => {
+              const aElem = (a.elementName || '').toLowerCase().trim();
+              const aScope = (a.materialScope || '').toLowerCase().trim();
+              return (itemElem && aElem && (itemElem === aElem || itemElem.includes(aElem))) ||
+                     (itemScope && aScope && (itemScope.includes(aScope) || aScope.includes(itemScope)));
+            });
+            if (matchedAnalysis.length > 0) {
+              filteredIds = matchedAnalysis.map((a: any) => a.id);
+            }
+          }
+
+          return {
+            ...item,
+            cpAnalysisItemIds: filteredIds,
+          };
+        });
+
+        return res.json({ success: true, items: sanitizedItems, engine: 'gemini' });
+      }
+    } catch (error: any) {
+      console.warn('Gemini generate TP failed, falling back to pedagogical engine:', error);
     }
-
-    return res.json({ success: true, items: parsed, engine: 'gemini' });
-  } catch (error: any) {
-    console.error('Gemini generate TP failed:', error);
-    const isAuth = error?.status === 401 || error?.status === 403 ||
-      (error?.message && (error.message.includes('API_KEY_INVALID') || error.message.includes('API key not valid')));
-    return res.status(isAuth ? (error.status || 401) : 500).json({
-      error: `Gagal merumuskan AI TP: ${error.message || 'Respons provider AI tidak dapat diproses'}`,
-      code: isAuth ? 'INVALID_API_KEY' : undefined,
-    });
   }
+
+  // Fallback: Pedagogical Rule Engine
+  const fallbackItems = fallbackGenerateTP({
+    cpGeneral,
+    cpElements,
+    cpAnalysisItems: validAnalysisItems,
+    existingTps,
+    subject,
+    grade,
+    phase,
+    curriculum,
+  });
+
+  return res.json({ success: true, items: fallbackItems, engine: 'pedagogical_engine' });
 });
 
 // 3. Endpoint: AI Generate ATP from TP

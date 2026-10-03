@@ -29,6 +29,7 @@ export interface GenerateTPParams {
   cpGeneral: string;
   cpElements: CPElem[];
   cpAnalysisItems?: any[];
+  existingTps?: TPItem[];
   subject: string;
   grade: string;
   phase: string;
@@ -295,24 +296,170 @@ export async function generateTPWithAI(params: GenerateTPParams): Promise<TPItem
     }
 
     const rawItems = data.items;
-    return rawItems.map((item: any, idx: number) => {
-      const stmt = item.statement || item.description || '';
-      return {
-        id: `tp-item-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-        code: item.code || '',
-        elementName: item.elementName || '',
-        statement: stmt,
-        description: stmt,
-        competence: item.competence || '',
-        contentScope: item.contentScope || '',
-        p3Dimensions: Array.isArray(item.p3Dimensions) ? item.p3Dimensions : [],
-        order: idx + 1,
-        cpAnalysisItemIds: Array.isArray(item.cpAnalysisItemIds) ? item.cpAnalysisItemIds : [],
-      };
-    });
+    return mergeGeneratedTPsWithExisting(rawItems, params.existingTps || []);
   } catch (err) {
     throw new Error(formatAIErrorMessage(err, 'merumuskan Tujuan Pembelajaran'));
   }
+}
+
+/**
+ * Deterministic safe merge for TP regeneration.
+ * Matches generated TPs to existing TPs using cpAnalysisItemIds, elementName, contentScope, statement.
+ * Strictly preserves existing TPItem.id and teacher work. Never automatically deletes existing TPs.
+ */
+export function mergeGeneratedTPsWithExisting(
+  generatedItems: Array<Partial<TPItem>>,
+  existingItems: TPItem[] = []
+): TPItem[] {
+  if (!existingItems || existingItems.length === 0) {
+    return generatedItems.map((g, idx) => {
+      const stmt = g.statement || (g as any).description || '';
+      return {
+        id: g.id || `tp-item-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`,
+        code: g.code || `TP ${idx + 1}`,
+        elementName: g.elementName || '',
+        statement: stmt,
+        description: stmt,
+        competence: g.competence || '',
+        contentScope: g.contentScope || '',
+        p3Dimensions: Array.isArray(g.p3Dimensions) ? g.p3Dimensions : [],
+        order: idx + 1,
+        cpAnalysisItemIds: Array.isArray(g.cpAnalysisItemIds) ? g.cpAnalysisItemIds : [],
+      };
+    });
+  }
+
+  const matchedExistingIds = new Set<string>();
+  const result: TPItem[] = [];
+
+  const calculateMatchScore = (gen: Partial<TPItem>, exist: TPItem): number => {
+    let score = 0;
+
+    // 1. cpAnalysisItemIds overlap (highest priority)
+    const genAnalysisIds = Array.isArray(gen.cpAnalysisItemIds) ? gen.cpAnalysisItemIds : [];
+    const existAnalysisIds = Array.isArray(exist.cpAnalysisItemIds) ? exist.cpAnalysisItemIds : [];
+    if (genAnalysisIds.length > 0 && existAnalysisIds.length > 0) {
+      const overlap = genAnalysisIds.filter((id) => existAnalysisIds.includes(id));
+      if (overlap.length > 0) {
+        score += 10 * overlap.length;
+      }
+    }
+
+    // 2. Exact or substring match on elementName
+    const genElem = (gen.elementName || '').trim().toLowerCase();
+    const existElem = (exist.elementName || '').trim().toLowerCase();
+    if (genElem && existElem && (genElem === existElem || genElem.includes(existElem) || existElem.includes(genElem))) {
+      score += 4;
+    }
+
+    // 3. Exact or keyword match on contentScope
+    const genScope = (gen.contentScope || '').trim().toLowerCase();
+    const existScope = (exist.contentScope || '').trim().toLowerCase();
+    if (genScope && existScope && (genScope === existScope || genScope.includes(existScope) || existScope.includes(genScope))) {
+      score += 5;
+    }
+
+    // 4. Code match
+    const genCode = (gen.code || '').trim().toLowerCase();
+    const existCode = (exist.code || '').trim().toLowerCase();
+    if (genCode && existCode && genCode === existCode) {
+      score += 3;
+    }
+
+    // 5. Statement similarity (supporting fallback)
+    const genStmt = (gen.statement || (gen as any).description || '').trim().toLowerCase();
+    const existStmt = (exist.statement || exist.description || '').trim().toLowerCase();
+    if (genStmt && existStmt) {
+      if (genStmt === existStmt) {
+        score += 6;
+      } else {
+        const wordsGen = genStmt.split(/\s+/).filter((w) => w.length > 3);
+        const wordsExist = existStmt.split(/\s+/).filter((w) => w.length > 3);
+        const wordOverlap = wordsGen.filter((w) => wordsExist.includes(w)).length;
+        if (wordOverlap >= 2) {
+          score += 2;
+        }
+      }
+    }
+
+    return score;
+  };
+
+  for (let i = 0; i < generatedItems.length; i++) {
+    const gen = generatedItems[i];
+    let bestMatch: TPItem | null = null;
+    let highestScore = 3;
+
+    for (const exist of existingItems) {
+      if (matchedExistingIds.has(exist.id)) continue;
+      const score = calculateMatchScore(gen, exist);
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = exist;
+      }
+    }
+
+    if (bestMatch) {
+      matchedExistingIds.add(bestMatch.id);
+      // Strictly PRESERVE existing TPItem.id!
+      const finalCode = bestMatch.code?.trim() ? bestMatch.code : (gen.code || `TP ${result.length + 1}`);
+      const finalStatement = bestMatch.statement?.trim() ? bestMatch.statement : (gen.statement || (gen as any).description || '');
+      const finalElementName = bestMatch.elementName?.trim() ? bestMatch.elementName : (gen.elementName || '');
+      const finalCompetence = bestMatch.competence?.trim() ? bestMatch.competence : (gen.competence || '');
+      const finalContentScope = bestMatch.contentScope?.trim() ? bestMatch.contentScope : (gen.contentScope || '');
+      const finalP3 = (bestMatch.p3Dimensions && bestMatch.p3Dimensions.length > 0)
+        ? bestMatch.p3Dimensions
+        : (Array.isArray(gen.p3Dimensions) ? gen.p3Dimensions : []);
+
+      const combinedAnalysisIds = Array.from(
+        new Set([
+          ...(Array.isArray(bestMatch.cpAnalysisItemIds) ? bestMatch.cpAnalysisItemIds : []),
+          ...(Array.isArray(gen.cpAnalysisItemIds) ? gen.cpAnalysisItemIds : []),
+        ])
+      );
+
+      result.push({
+        ...bestMatch,
+        id: bestMatch.id, // Stable ID preserved!
+        code: finalCode,
+        elementName: finalElementName,
+        statement: finalStatement,
+        description: finalStatement,
+        competence: finalCompetence,
+        contentScope: finalContentScope,
+        p3Dimensions: finalP3,
+        cpAnalysisItemIds: combinedAnalysisIds,
+        order: result.length + 1,
+      });
+    } else {
+      // New genuinely supported TP
+      const stmt = gen.statement || (gen as any).description || '';
+      result.push({
+        id: `tp-item-${Date.now()}-${i + 1}-${Math.random().toString(36).substring(2, 6)}`,
+        code: gen.code || `TP ${result.length + 1}`,
+        elementName: gen.elementName || '',
+        statement: stmt,
+        description: stmt,
+        competence: gen.competence || '',
+        contentScope: gen.contentScope || '',
+        p3Dimensions: Array.isArray(gen.p3Dimensions) ? gen.p3Dimensions : [],
+        order: result.length + 1,
+        cpAnalysisItemIds: Array.isArray(gen.cpAnalysisItemIds) ? gen.cpAnalysisItemIds : [],
+      });
+    }
+  }
+
+  // Existing unmatched TPs are preserved (never automatically deleted)
+  for (const exist of existingItems) {
+    if (!matchedExistingIds.has(exist.id)) {
+      result.push({
+        ...exist,
+        order: result.length + 1,
+      });
+    }
+  }
+
+  return result.map((item, idx) => ({ ...item, order: idx + 1 }));
 }
 
 export interface GenerateLearningPlanParams {
