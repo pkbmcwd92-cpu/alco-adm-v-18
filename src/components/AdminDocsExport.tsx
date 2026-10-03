@@ -242,6 +242,7 @@ export const AdminDocsExport: React.FC<AdminDocsExportProps> = ({
       case 'ANALISIS_CP_TP':
         return cpTime > docTime;
       case 'ATP':
+      case 'PEMETAAN_ATP_UNIT':
         return cpTime > docTime || tpTime > docTime || atpTime > docTime;
       case 'PROTA':
       case 'PROMES':

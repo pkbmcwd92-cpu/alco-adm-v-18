@@ -3,6 +3,7 @@ import {
   DocumentGenerationContext,
   DocumentSnapshot,
 } from '../../types';
+import { ATPItem, TimeAllocation } from '../../../../types';
 import {
   PdfDocumentBuilder,
   PdfDocumentSection,
@@ -17,6 +18,70 @@ import { buildProtaProjection, buildK13ProtaProjection } from '../../protaProjec
 import { buildModulAjarProjection } from '../../modulAjarProjection';
 import { buildK13AlokasiWaktuRows } from '../../k13AlokasiWaktuHelper';
 import { resolveAtpItemAnnualJP } from '../../../learningPlanService';
+
+function resolveAllocationForAtpPdf(
+  atpItem: ATPItem,
+  timeAllocations?: TimeAllocation[]
+): { weekStr: string; jpStr: string } {
+  if (!timeAllocations || timeAllocations.length === 0) {
+    return { weekStr: '-', jpStr: '-' };
+  }
+
+  const matching = timeAllocations.filter((ta) => {
+    if (ta.sourceType === 'ASSESSMENT' || ta.sourceType === 'RESERVE') {
+      return false;
+    }
+    const isExact = ta.atpItemId === atpItem.id || ta.sourceId === atpItem.id;
+    if (!isExact) return false;
+    if (!ta.sourceType || ta.sourceType === 'ATP_ITEM') {
+      return true;
+    }
+    return false;
+  });
+
+  if (matching.length === 0) {
+    return { weekStr: '-', jpStr: '-' };
+  }
+
+  let totalJp = 0;
+  let hasValidJp = false;
+  for (const ta of matching) {
+    const val =
+      typeof ta.allocatedJP === 'number' && ta.allocatedJP > 0
+        ? ta.allocatedJP
+        : typeof ta.jp === 'number' && ta.jp > 0
+        ? ta.jp
+        : null;
+    if (val !== null) {
+      totalJp += val;
+      hasValidJp = true;
+    }
+  }
+
+  const weekTokens: string[] = [];
+  for (const ta of matching) {
+    if (typeof ta.weekNumber === 'number' && ta.weekNumber > 0) {
+      weekTokens.push(`Minggu ${ta.weekNumber}`);
+    } else if (
+      typeof (ta as any).startWeek === 'number' &&
+      (ta as any).startWeek > 0
+    ) {
+      const sw = (ta as any).startWeek;
+      const ew = (ta as any).endWeek;
+      if (typeof ew === 'number' && ew > sw) {
+        weekTokens.push(`Minggu ${sw}–${ew}`);
+      } else {
+        weekTokens.push(`Minggu ${sw}`);
+      }
+    }
+  }
+
+  const weekStr =
+    weekTokens.length > 0 ? Array.from(new Set(weekTokens)).join(', ') : '-';
+  const jpStr = hasValidJp ? `${totalJp} JP` : '-';
+
+  return { weekStr, jpStr };
+}
 
 export async function generatePdfDocument(
   type: DocumentType,
@@ -304,6 +369,141 @@ export async function generatePdfDocument(
           { header: 'Profil Pancasila', dataKey: 'p3', width: 38 },
           { header: 'Rencana Asesmen', dataKey: 'asm', width: 40 },
           { header: 'Kata Kunci / Glosarium', dataKey: 'gls', width: 26 },
+        ],
+        rows,
+      });
+      break;
+    }
+
+    case 'PEMETAAN_ATP_UNIT': {
+      title = 'Pemetaan ATP, Unit/Bab, dan Lingkup Materi';
+      subTitle = `${subject} — ${grade} (${academicSetting?.phase || 'Fase A'}) — Tahun Ajaran ${academicYear}`;
+      fileName = `Pemetaan_ATP_Unit_${cleanSubject}_${cleanGrade}.pdf`;
+      orientation = 'landscape';
+
+      sections.push({
+        type: 'heading',
+        text: 'Matriks Pemetaan Alur Tujuan Pembelajaran berdasarkan Unit / Bab',
+        level: 1,
+      });
+
+      const allAllocations: TimeAllocation[] = [
+        ...(context.timeAllocations || []),
+        ...(context.protaSemesterAllocations?.flatMap((b) => b.allocations || []) || []),
+      ];
+      const seenAllocIds = new Set<string>();
+      const uniqueAllocations: TimeAllocation[] = [];
+      for (const alloc of allAllocations) {
+        if (alloc.id) {
+          if (seenAllocIds.has(alloc.id)) continue;
+          seenAllocIds.add(alloc.id);
+        }
+        uniqueAllocations.push(alloc);
+      }
+
+      const availableTps = tp?.items || [];
+      let rows: (string | number)[][];
+
+      if (isBlankMode) {
+        rows = Array.from({ length: 8 }, (_, idx) => [
+          idx === 0 ? 'Unit 1' : '',
+          idx === 0 ? 'TP-01 → TP-02' : '',
+          `Langkah ${idx + 1}`,
+          '..................................................',
+          'Minggu .....',
+          '..... JP',
+        ]);
+      } else {
+        const sortedItems = [...(atp?.items || [])].sort(
+          (a, b) => (a.stepNumber || 0) - (b.stepNumber || 0)
+        );
+
+        interface UnitGroup {
+          unitTitle: string;
+          items: ATPItem[];
+        }
+        const groups: UnitGroup[] = [];
+        const groupMap = new Map<string, UnitGroup>();
+
+        for (const item of sortedItems) {
+          const titleKey =
+            item.unitTitle && item.unitTitle.trim().length > 0
+              ? item.unitTitle.trim()
+              : 'Tanpa Unit / Bab';
+
+          let grp = groupMap.get(titleKey);
+          if (!grp) {
+            grp = { unitTitle: titleKey, items: [] };
+            groupMap.set(titleKey, grp);
+            groups.push(grp);
+          }
+          grp.items.push(item);
+        }
+
+        const dataRows: (string | number)[][] = [];
+
+        for (const group of groups) {
+          const seenCodesInGroup = new Set<string>();
+          const orderedTpCodes: string[] = [];
+
+          for (const item of group.items) {
+            const resolvedTp =
+              availableTps.find((t) => t.id === item.tpId) ||
+              availableTps.find(
+                (t) =>
+                  t.code &&
+                  item.tpCode &&
+                  t.code.toUpperCase().trim() === item.tpCode.toUpperCase().trim()
+              );
+
+            const code = resolvedTp?.code || item.tpCode || '-';
+            if (!seenCodesInGroup.has(code)) {
+              seenCodesInGroup.add(code);
+              orderedTpCodes.push(code);
+            }
+          }
+
+          const tpChainStr =
+            orderedTpCodes.length > 0 ? orderedTpCodes.join(' → ') : '-';
+
+          group.items.forEach((item, itemIdx) => {
+            const isFirstInGroup = itemIdx === 0;
+            const resolvedTp =
+              availableTps.find((t) => t.id === item.tpId) ||
+              availableTps.find(
+                (t) =>
+                  t.code &&
+                  item.tpCode &&
+                  t.code.toUpperCase().trim() === item.tpCode.toUpperCase().trim()
+              );
+
+            const alloc = resolveAllocationForAtpPdf(item, uniqueAllocations);
+            const materialText =
+              item.materialScope || resolvedTp?.contentScope || '-';
+
+            dataRows.push([
+              isFirstInGroup ? group.unitTitle : '',
+              isFirstInGroup ? tpChainStr : '',
+              `Langkah ${item.stepNumber || itemIdx + 1}`,
+              materialText,
+              alloc.weekStr,
+              alloc.jpStr,
+            ]);
+          });
+        }
+
+        rows = dataRows.length > 0 ? dataRows : [['—', '—', '—', 'Belum ada data ATP', '—', '—']];
+      }
+
+      sections.push({
+        type: 'table',
+        columns: [
+          { header: 'Unit / Bab', dataKey: 'unit', width: 45 },
+          { header: 'TP dalam ATP', dataKey: 'tpChain', width: 50 },
+          { header: 'ATP Langkah', dataKey: 'step', width: 28, align: 'center' },
+          { header: 'Lingkup Materi', dataKey: 'mat', width: 75 },
+          { header: 'Minggu', dataKey: 'week', width: 35, align: 'center' },
+          { header: 'JP', dataKey: 'jp', width: 25, align: 'center' },
         ],
         rows,
       });
@@ -1175,6 +1375,7 @@ export async function generatePdfDocument(
     type === 'CP' ||
     type === 'TP' ||
     type === 'ATP' ||
+    type === 'PEMETAAN_ATP_UNIT' ||
     type === 'PROTA' ||
     type === 'ANALISIS_CP_TP';
 
