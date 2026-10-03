@@ -735,12 +735,7 @@ const AcademicSettingsForm: React.FC<AcademicSettingsFormProps> = ({
               id="btn-save-academic-setting"
               type="button"
               onClick={() => handleSave()}
-              disabled={!isDirty}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
-                isDirty
-                  ? 'bg-blue-700 text-white hover:bg-blue-800 shadow-md'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              }`}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-700 text-white hover:bg-blue-800 shadow-md transition cursor-pointer"
             >
               Simpan Pengaturan
             </button>

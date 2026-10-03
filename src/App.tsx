@@ -38,6 +38,8 @@ import {
 } from './types/storageV5';
 import {
   loadStorageV5,
+  saveStorageV5,
+  saveAnnualJPReferenceV5,
   createProfileV5,
   updateProfileV5,
   deleteProfileV5,
@@ -601,7 +603,7 @@ export function App() {
         if (setting.academicYear) yp.academicYear = setting.academicYear;
         if (setting.level) yp.level = setting.level as any;
         if (setting.grade) yp.grade = setting.grade;
-        if (setting.classSection !== undefined) yp.classSection = setting.classSection;
+        if ((setting as any).classSection !== undefined) yp.classSection = (setting as any).classSection;
         if (setting.subject) yp.subject = setting.subject;
         if (setting.phase) yp.phase = setting.phase;
         yp.updatedAt = new Date().toISOString();
