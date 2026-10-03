@@ -111,7 +111,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
         const candidateItem: ATPItem = {
           id: `atp-item-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
           stepNumber: item.stepNumber || idx + 1,
-          tpId: (item as any).tpId || '',
+          tpId: item.tpId || '',
           tpCode: item.tpCode || '',
           tpStatement: item.tpStatement || '',
           unitTitle: (item as any).unitTitle || undefined,

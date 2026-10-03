@@ -57,7 +57,7 @@ export interface GenerateATPParams {
 
 export interface GenerateATPResult {
   rationale: string;
-  items: Omit<ATPItem, 'id' | 'tpId'>[];
+  items: Omit<ATPItem, 'id'>[];
 }
 
 export const GEMINI_API_KEY_STORAGE_KEY = 'alco_admin_gemini_api_key';

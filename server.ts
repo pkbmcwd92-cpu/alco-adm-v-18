@@ -939,13 +939,11 @@ ${isK13 ? `- Tahun Ajaran / Semester: ${academicYear || '-'} / ${semester || '-'
 - Alokasi Jam per Minggu: ${validatedWeeklyJP !== undefined ? `${validatedWeeklyJP} JP` : 'Belum ditentukan'}
 - Rujukan CP: ${cpGeneral || '-'}
 
-DAFTAR TP YANG SUDAH DIBUAT:
+DAFTAR TP YANG SUDAH DIBUAT (PENTING: Gunakan TP_ID persis saat menautkan TP!):
 ${tps
   .map(
-    (tp: { code: string; statement: string; competence?: string; contentScope?: string; p3Dimensions?: string[] }, idx: number) =>
-      `${idx + 1}. [Kode: ${tp.code || '-'}] ${tp.statement} (Materi: ${tp.contentScope || '-'}, Kompetensi: ${
-        tp.competence || '-'
-      }, Dimensi Profil Lulusan: ${tp.p3Dimensions?.join(', ') || '-'})`
+    (tp: { id: string; code: string; statement: string; competence?: string; contentScope?: string; p3Dimensions?: string[] }) =>
+      `- [TP_ID: ${tp.id}] [TP_CODE: ${tp.code || '-'}] Rumusan: "${tp.statement}" (Materi: "${tp.contentScope || '-'}", Kompetensi: "${tp.competence || '-'}", Dimensi Profil Lulusan: ${tp.p3Dimensions?.join(', ') || '-'})`
   )
   .join('\n')}
 
@@ -980,6 +978,7 @@ Kembalikan output JSON sesuai schema:`;
                 type: Type.OBJECT,
                 properties: {
                   stepNumber: { type: Type.INTEGER, description: 'Urutan alur pembelajaran (1, 2, 3...)' },
+                  tpId: { type: Type.STRING, description: 'TP_ID rujukan persis dari daftar input' },
                   tpCode: { type: Type.STRING, description: 'Kode TP yang diurutkan' },
                   tpStatement: { type: Type.STRING, description: 'Rumusan TP' },
                   materialScope: { type: Type.STRING, description: 'Lingkup Materi / Topik Pembelajaran Spesifik' },
@@ -996,6 +995,7 @@ Kembalikan output JSON sesuai schema:`;
                 },
                 required: [
                   'stepNumber',
+                  'tpId',
                   'tpCode',
                   'tpStatement',
                   'materialScope',
@@ -1021,15 +1021,56 @@ Kembalikan output JSON sesuai schema:`;
       return res.status(500).json({ error: 'Respons AI tidak memenuhi kualifikasi struktur ATP: Hasil perumusan alur TP kosong atau bukan array' });
     }
 
+    // Build canonical TP maps for strict validation and matching
+    const tpMapById = new Map<string, any>();
+    const tpMapByCode = new Map<string, any[]>();
+
+    tps.forEach((tp: any) => {
+      if (tp.id) tpMapById.set(tp.id, tp);
+      if (tp.code) {
+        const normalizedCode = tp.code.trim().toUpperCase();
+        if (!tpMapByCode.has(normalizedCode)) {
+          tpMapByCode.set(normalizedCode, []);
+        }
+        tpMapByCode.get(normalizedCode)!.push(tp);
+      }
+    });
+
+    const resolvedItems: any[] = [];
+
     for (let i = 0; i < parsed.items.length; i++) {
       const item = parsed.items[i];
       if (!item || typeof item !== 'object') {
         return res.status(500).json({ error: `Respons AI tidak memenuhi kualifikasi struktur ATP: Butir langkah ATP ke-${i + 1} bukan berupa objek valid` });
       }
-      const stmt = item.tpStatement || item.statement;
-      if (!stmt || typeof stmt !== 'string' || stmt.trim() === '') {
-        return res.status(500).json({ error: `Respons AI tidak memenuhi kualifikasi struktur ATP: Rumusan TP pada butir langkah ke-${i + 1} kosong atau tidak valid` });
+
+      let canonicalTP: any = null;
+
+      // 1. Primary resolution using tpId
+      if (item.tpId && tpMapById.has(item.tpId)) {
+        canonicalTP = tpMapById.get(item.tpId);
       }
+
+      // 2. Secondary resolution using tpCode fallback
+      if (!canonicalTP && item.tpCode) {
+        const normCode = item.tpCode.trim().toUpperCase();
+        const matches = tpMapByCode.get(normCode);
+        if (matches && matches.length === 1) {
+          canonicalTP = matches[0];
+        }
+      }
+
+      // If we cannot resolve, response is considered invalid (prevents hallucinating TPs)
+      if (!canonicalTP) {
+        return res.status(500).json({
+          error: `Respons AI tidak sah: Langkah ke-${i + 1} merujuk ke Tujuan Pembelajaran (${item.tpId || item.tpCode || 'Tanpa ID'}) yang tidak ditemukan dalam daftar rujukan guru.`
+        });
+      }
+
+      // Overwrite ATP items with exact canonical TP reference values
+      item.tpId = canonicalTP.id;
+      item.tpCode = canonicalTP.code;
+      item.tpStatement = canonicalTP.statement;
 
       if (validatedWeeklyJP === undefined) {
         // Enforce unresolved JP: do not leak synthetic or guessed numbers
@@ -1044,7 +1085,11 @@ Kembalikan output JSON sesuai schema:`;
           delete item.allocatedJP;
         }
       }
+
+      resolvedItems.push(item);
     }
+
+    parsed.items = resolvedItems;
 
     return res.json({ success: true, data: parsed, engine: 'gemini' });
   } catch (error: any) {
