@@ -212,11 +212,11 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
         const scopeB = (cpaB.materialScope || '').trim();
         const kwB = extractKeywords(`${scopeB} ${cpaB.suggestedTp || ''}`);
 
-        // Merge condition: same competence tier + shared keywords/element + neither is overly broad
+        // Merge condition: MUST be from same element AND same tier AND shares keywords (truly related material scope)
+        const sameElement = Boolean(elemA && elemB && elemA.toLowerCase() === elemB.toLowerCase());
         const sharesKeywords = kwA.some((k) => kwB.includes(k));
-        const sameElement = elemA && elemB && elemA.toLowerCase() === elemB.toLowerCase();
 
-        if (tierA === tierB && (sharesKeywords || (sameElement && mergedScopes.length < 2))) {
+        if (sameElement && tierA === tierB && sharesKeywords && mergedScopes.length < 2) {
           mergedAnalysisIds.push(cpaB.id);
           if (scopeB && !mergedScopes.some((s) => s.toLowerCase() === scopeB.toLowerCase())) {
             mergedScopes.push(scopeB);

@@ -515,7 +515,7 @@ PRINSIP BEDAH & ANALISIS CP:
    - "materialScope": Lingkup Materi / Konsep Inti esensial yang dipelajari.
    - "meaningfulUnderstanding": Pemahaman bermakna / variasi keterampilan yang diharapkan.
    - "suggestedTp": Rekomendasi/usulan rumusan awal Tujuan Pembelajaran yang diturunkan langsung dari elemen CP tersebut.
-3. Satu elemen CP dapat menghasilkan 1 atau beberapa butir analisis jika elemen tersebut secara alami memuat beberapa kompetensi/materi yang berbeda dan kompleks. Jangan memaksakan jumlah angka tertentu.
+3. GRANULARITAS BEDAH ELEMEN: Jika satu elemen CP memuat beberapa kompetensi atau lingkup materi yang berbeda secara pedagogis, AI HARUS memecahnya menjadi beberapa CPAnalysisItem tersendiri. Setiap item harus mewakili satu pasangan kompetensi + lingkup materi yang cukup fokus untuk menjadi dasar TP. Jangan memaksakan jumlah angka tertentu (bukan kuota).
 4. "generalSummary": Berikan ringkasan 1-2 paragraf mengenai fokus utama dan orientasi pedagogis CP ini.
 
 DATA PEMBELAJARAN:
@@ -631,7 +631,6 @@ app.post('/api/ai/generate-tp', async (req, res) => {
     cpGeneral,
     cpElements,
     cpAnalysisItems = [],
-    existingTps = [],
     subject,
     grade,
     phase,
@@ -644,6 +643,12 @@ app.post('/api/ai/generate-tp', async (req, res) => {
 
   const validAnalysisItems = Array.isArray(cpAnalysisItems) ? cpAnalysisItems : [];
   const validAnalysisIdSet = new Set(validAnalysisItems.map((a: any) => String(a.id)).filter(Boolean));
+  const analysisElemMap = new Map<string, string>();
+  validAnalysisItems.forEach((a: any) => {
+    if (a.id) {
+      analysisElemMap.set(String(a.id), (a.elementId || a.elementName || '').toLowerCase().trim());
+    }
+  });
 
   const apiKey = resolveApiKey(req);
   if (apiKey) {
@@ -651,28 +656,22 @@ app.post('/api/ai/generate-tp', async (req, res) => {
       const ai = createAIClient(apiKey);
       const prompt = `Anda adalah pakar perancangan kurikulum pendidikan nasional Indonesia (Kurikulum Merdeka).
 Tugas Anda adalah merumuskan Tujuan Pembelajaran (TP) yang diturunkan melalui analisis pedagogis bertahap:
-CP → Elemen CP → Analisis CP → Dekomposisi & Agregasi Semantis TP → Rumusan TP.
+CP → Elemen CP → Analisis CP → Rumusan TP.
 
-PRINSIP PEDAGOGIS & GRANULARITAS TP (WAJIB DIPATUHI):
-1. BUKAN KUOTA & BUKAN 1:1 MEKANIS:
+PRINSIP PEDAGOGIS & KONTRAK ELEMEN CP → TP (WAJIB DIPATUHI):
+1. BUKAN KUOTA & ELEMEN SEBAGAI BOUNDARY:
    - Jumlah TP adalah hasil murni analisis kurikulum, BUKAN berdasarkan target kuota angka.
-   - JANGAN mengasumsikan 1 Butir Analisis CP = 1 TP secara kaku.
-2. AGREGASI & DEKOMPOSISI SEMANTIS:
-   - GABUNGKAN (MERGE): Beberapa butir Analisis CP yang sangat erat (misal mendukung satu tujuan pembelajaran yang utuh pada topik yang sama) dapat dirangkum menjadi 1 TP koheren yang memuat multiple ID pada "cpAnalysisItemIds".
-   - PISAHKAN (KEEP SEPARATE): Kompetensi atau sasaran belajar yang berbeda secara mendasar (misal: pengetahuan/pemahaman vs keterampilan/kinerja/praktik vs penerapan/analisis vs karakter/refleksi) HARUS tetap menjadi butir TP terpisah meskipun topiknya serupa.
-   - DEKOMPOSISI (DECOMPOSE): Satu butir Analisis CP yang memuat cakupan materi atau kompetensi majemuk/luas harus dipecah menjadi beberapa TP yang terfokus, teramati, dan terukur.
-   - LINTAS-ELEMEN: TP dapat menautkan Analisis CP lintas elemen jika saling mendukung dalam satu capaian pembelajaran terpadu.
+   - Elemen CP adalah batas turunan TP. Kelompokkan CPAnalysisItem berdasarkan elemen CP, dan proses setiap elemen secara terpisah.
+   - JANGAN PERNAH menggabungkan (merge) item Analisis CP dari dua elemen yang berbeda menjadi satu TP! Semua cpAnalysisItemIds pada satu TP HARUS berasal dari elemen CP yang sama.
+2. PROSES PER ELEMEN (1..N TP PER ELEMEN):
+   - MERGE HANYA DALAM ELEMEN YANG SAMA: Jika dalam satu elemen terdapat beberapa butir Analisis CP yang sangat erat dan membentuk satu tujuan belajar yang utuh, baru dapat digabungkan menjadi 1 TP koheren.
+   - DEKOMPOSISI (DECOMPOSE): Jika satu butir/elemen Analisis CP memuat beberapa kompetensi atau lingkup materi yang berbeda secara pedagogis, AI HARUS memecahnya menjadi beberapa TP terfokus.
+   - Pertahankan TP berbeda jika kompetensi (misal: pengetahuan vs keterampilan vs praktik) atau lingkup materinya berbeda.
 3. KUALITAS BUTIR TP:
    - Setiap TP harus eksplisit memuat: Kompetensi (KKO operasional terukur) dan Lingkup Materi (konten esensial).
    - Format standar: "Peserta didik mampu [Kompetensi/KKO] [Lingkup Materi] melalui [Konteks/Aktivitas/Kondisi] secara [Karakter/Kriteria]."
-   - Hindari TP yang terlalu luas (menggabungkan kompetensi yang tidak berhubungan) dan hindari TP yang terlalu terfragmentasi (jangan jadikan contoh aktivitas kecil sebagai TP tersendiri).
 4. PELACAKAN SILSILAH (LINEAGE):
-   - Setiap butir TP HARUS mencantumkan ID butir Analisis CP pendukungnya pada "cpAnalysisItemIds" (bisa 1 ID atau lebih). JANGAN PERNAH mengarang ID fiktif.
-${
-  Array.isArray(existingTps) && existingTps.length > 0
-    ? `5. OTORITAS GURU (SELARASKAN TP EKSISTING): Guru telah memiliki daftar TP sebelumnya. Pertahankan rumusan dan kode TP yang sudah baik, selaraskan dengan Analisis CP, dan lengkapi atribut yang masih kosong atau belum optimal tanpa merusak struktur kerja guru.`
-    : ''
-}
+   - Setiap butir TP HARUS mencantumkan ID butir Analisis CP pendukungnya dari elemen yang sama pada "cpAnalysisItemIds" (bisa 1 ID atau lebih dari elemen yang sama). JANGAN PERNAH mengarang ID fiktif.
 
 DATA PEMBELAJARAN:
 - Mata Pelajaran: ${subject || '-'}
@@ -689,12 +688,6 @@ ${
   validAnalysisItems.length > 0
     ? `\nHASIL ANALISIS CP (Rujukan Utama Kompetensi & Lingkup Materi):
 ${validAnalysisItems.map((a: any, idx: number) => `${idx + 1}. [ID: ${a.id}] [Elemen: ${a.elementName || '-'}] Kompetensi: "${a.cpCompetence || '-'}" | Materi: "${a.materialScope || '-'}" | Rekomendasi TP: "${a.suggestedTp || '-'}"`).join('\n')}`
-    : ''
-}
-${
-  Array.isArray(existingTps) && existingTps.length > 0
-    ? `\nDAFTAR TP EKSISTING (Rujukan Guru):
-${existingTps.map((t: any, idx: number) => `${idx + 1}. [Kode: ${t.code || '-'}] [Elemen: ${t.elementName || '-'}] Rumusan: "${t.statement || t.description || '-'}" | Materi: "${t.contentScope || '-'}"`).join('\n')}`
     : ''
 }
 
@@ -723,10 +716,10 @@ Kembalikan respon dalam format JSON sesuai schema:`;
                 cpAnalysisItemIds: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: 'Daftar ID butir Analisis CP yang menjadi rujukan',
+                  description: 'Daftar ID butir Analisis CP dari elemen yang sama yang menjadi rujukan',
                 },
               },
-              required: ['code', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions'],
+              required: ['code', 'elementName', 'statement', 'competence', 'contentScope', 'p3Dimensions', 'cpAnalysisItemIds'],
             },
           },
         },
@@ -736,12 +729,20 @@ Kembalikan respon dalam format JSON sesuai schema:`;
       const validation = validateAITPPayload(parsed);
 
       if (validation.isValid && Array.isArray(parsed)) {
-        // Lineage sanitization: filter out any invented CP Analysis IDs
+        // Lineage sanitization: filter out any invented CP Analysis IDs & ensure strictly single-element lineage
         const sanitizedItems = parsed.map((item: any) => {
           const rawIds = Array.isArray(item.cpAnalysisItemIds) ? item.cpAnalysisItemIds : [];
           let filteredIds = rawIds.filter((id: string) => validAnalysisIdSet.has(String(id)));
 
-          // If no valid IDs matched but CP Analysis items exist, match based on element or scope keyword
+          // Enforce single-element boundary: if filteredIds contain IDs from multiple elements, retain only those matching first element
+          if (filteredIds.length > 1) {
+            const firstElem = analysisElemMap.get(String(filteredIds[0]));
+            if (firstElem) {
+              filteredIds = filteredIds.filter((id: string) => analysisElemMap.get(String(id)) === firstElem);
+            }
+          }
+
+          // If no valid IDs matched but CP Analysis items exist, match based on element name
           if (filteredIds.length === 0 && validAnalysisItems.length > 0) {
             const itemElem = (item.elementName || '').toLowerCase().trim();
             const itemScope = (item.contentScope || '').toLowerCase().trim();
@@ -752,7 +753,10 @@ Kembalikan respon dalam format JSON sesuai schema:`;
                      (itemScope && aScope && (itemScope.includes(aScope) || aScope.includes(itemScope)));
             });
             if (matchedAnalysis.length > 0) {
-              filteredIds = matchedAnalysis.map((a: any) => a.id);
+              const firstMatchedElem = (matchedAnalysis[0].elementId || matchedAnalysis[0].elementName || '').toLowerCase().trim();
+              filteredIds = matchedAnalysis
+                .filter((a: any) => (a.elementId || a.elementName || '').toLowerCase().trim() === firstMatchedElem)
+                .map((a: any) => a.id);
             }
           }
 
@@ -774,7 +778,6 @@ Kembalikan respon dalam format JSON sesuai schema:`;
     cpGeneral,
     cpElements,
     cpAnalysisItems: validAnalysisItems,
-    existingTps,
     subject,
     grade,
     phase,

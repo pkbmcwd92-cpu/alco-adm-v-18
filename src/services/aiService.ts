@@ -258,10 +258,11 @@ export async function analyzeCPWithAI(params: {
 
 export async function generateTPWithAI(params: GenerateTPParams): Promise<TPItem[]> {
   try {
+    const { existingTps, ...payloadToSend } = params;
     const res = await aiFetch('/api/ai/generate-tp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify(payloadToSend),
     });
 
     const contentType = res.headers.get('Content-Type') || '';

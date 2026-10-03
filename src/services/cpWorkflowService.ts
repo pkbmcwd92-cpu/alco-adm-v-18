@@ -538,8 +538,23 @@ export function validateTPDataWorkflow(
     }
   }
 
-  // Check items completeness & stable ID uniqueness
+  // Check items completeness, stable ID uniqueness & CP Analysis coverage
   const seenIds = new Set<string>();
+  const referencedAnalysisItemIds = new Set<string>();
+
+  const analysisItemMap = new Map<string, { id: string; elementId?: string; elementName?: string }>();
+  if (cpAnalysis?.items) {
+    cpAnalysis.items.forEach((item) => {
+      if (item.id) {
+        analysisItemMap.set(item.id, {
+          id: item.id,
+          elementId: item.elementId,
+          elementName: (item.elementName || '').trim().toLowerCase(),
+        });
+      }
+    });
+  }
+
   for (let i = 0; i < tp.items.length; i++) {
     const item = tp.items[i];
     const stmt = item.statement || item.description || '';
@@ -553,6 +568,60 @@ export function validateTPDataWorkflow(
         issues.push(`Terdeteksi duplikasi Stable ID (${item.id}) pada butir TP.`);
       }
       seenIds.add(item.id);
+    }
+
+    // Deep validation against CP Analysis items if available
+    if (cpAnalysis && cpAnalysis.items && cpAnalysis.items.length > 0) {
+      // 1. Setiap TP harus memiliki competence
+      const comp = item.competence || (item as any).competency || '';
+      if (!comp.trim()) {
+        issues.push(`Butir TP ke-${i + 1} (${item.code || 'Tanpa Kode'}) belum mengisi Kata Kerja Operasional (Kompetensi).`);
+      }
+
+      // 2. Setiap TP harus memiliki contentScope
+      const scope = item.contentScope || (item as any).materialScope || '';
+      if (!scope.trim()) {
+        issues.push(`Butir TP ke-${i + 1} (${item.code || 'Tanpa Kode'}) belum mengisi Lingkup Materi.`);
+      }
+
+      // 3. Setiap TP harus memiliki cpAnalysisItemIds
+      const analysisIds = Array.isArray(item.cpAnalysisItemIds) ? item.cpAnalysisItemIds : [];
+      if (analysisIds.length === 0) {
+        issues.push(`Butir TP ke-${i + 1} (${item.code || 'Tanpa Kode'}) belum menautkan butir Analisis CP.`);
+      } else {
+        // 4. Semua ID tersebut harus valid terhadap cpAnalysis.items
+        // 5. Semua ID dalam satu TP harus berasal dari elemen CP yang sama
+        let firstElemKey: string | null = null;
+        let isCrossElement = false;
+
+        for (const anaId of analysisIds) {
+          const matched = analysisItemMap.get(anaId);
+          if (!matched) {
+            issues.push(`Butir TP ke-${i + 1} (${item.code || 'Tanpa Kode'}) menautkan ID Analisis CP (${anaId}) yang tidak ditemukan.`);
+          } else {
+            referencedAnalysisItemIds.add(anaId);
+            const elemKey = matched.elementId || matched.elementName || '';
+            if (firstElemKey === null) {
+              firstElemKey = elemKey;
+            } else if (elemKey && firstElemKey && elemKey !== firstElemKey) {
+              isCrossElement = true;
+            }
+          }
+        }
+
+        if (isCrossElement) {
+          issues.push(`Butir TP ke-${i + 1} (${item.code || 'Tanpa Kode'}) menautkan butir Analisis CP dari elemen CP yang berbeda.`);
+        }
+      }
+    }
+  }
+
+  // 6. Setiap CPAnalysisItem harus direferensikan minimal oleh satu TP
+  if (cpAnalysis && cpAnalysis.items && cpAnalysis.items.length > 0) {
+    for (const anaItem of cpAnalysis.items) {
+      if (anaItem.id && !referencedAnalysisItemIds.has(anaItem.id)) {
+        issues.push(`Butir Analisis CP "${anaItem.elementName || 'Elemen'}" (${anaItem.cpCompetence || 'Analisis'}) belum ditautkan oleh TP manapun.`);
+      }
     }
   }
 
