@@ -1044,11 +1044,15 @@ app.post('/api/ai/generate-learning-plan', async (req, res) => {
 
     const atpContextStr = atpItems && atpItems.length > 0
       ? atpItems.map((a: any, i: number) => {
-          const actualJp = typeof a.allocatedJP === 'number' && a.allocatedJP > 0
-            ? a.allocatedJP
-            : (typeof a.jp === 'number' && a.jp > 0 ? a.jp : null);
-          const jpStr = actualJp ? `${actualJp} JP` : 'Belum ditentukan';
-          return `${i + 1}. Langkah ${a.stepNumber || i + 1}: Lingkup ${a.materialScope || '-'} (${jpStr})`;
+          const parts: string[] = [];
+          if (a.unitTitle && typeof a.unitTitle === 'string' && a.unitTitle.trim()) {
+            parts.push(`Unit/Bab: ${a.unitTitle.trim()}`);
+          }
+          parts.push(`ATP Langkah: ${a.stepNumber || i + 1}`);
+          if (a.materialScope && typeof a.materialScope === 'string' && a.materialScope.trim()) {
+            parts.push(`Lingkup Materi: ${a.materialScope.trim()}`);
+          }
+          return `${i + 1}. ${parts.join(', ')}`;
         }).join('\n')
       : 'ATP: Belum tersedia';
 
@@ -1063,7 +1067,7 @@ ALOKASI WAKTU KANONIKAL: ${canonicalAllocatedJP ? `${canonicalAllocatedJP} JP` :
 TUJUAN PEMBELAJARAN (TP) RUJUKAN:
 ${tps.map((t: any, i: number) => `${i + 1}. [Kode: ${t.code || '-'}] ${t.statement} (Materi: ${t.contentScope || '-'}, Kompetensi: ${t.competence || '-'})`).join('\n')}
 
-ATP / ALOKASI JP RUJUKAN:
+ATP RUJUKAN:
 ${atpContextStr}
 
 INSTRUKSI INFORMASI UMUM & PEDAGOGIS:
@@ -1081,7 +1085,7 @@ INSTRUKSI KEGIATAN & ASESMEN:
 10. Buat kalimat pemahaman bermakna dan pertanyaan pemantik yang relevan.
 ${
   canonicalAllocatedJP
-    ? `11. ALOKASI WAKTU KANONIKAL: Unit pembelajaran ini memiliki Alokasi Waktu tepat ${canonicalAllocatedJP} JP dari pemetaan waktu semester. Rancang seluruh rangkaian kegiatan dan pengalaman belajar secara proporsional sesuai durasi ${canonicalAllocatedJP} JP tersebut. Jangan menebak, mengubah, atau menyimpulkan angka JP yang berbeda.`
+    ? `11. ALOKASI WAKTU KANONIKAL: Lingkup pembelajaran ini memiliki Alokasi Waktu tepat ${canonicalAllocatedJP} JP dari pemetaan waktu semester. Rancang seluruh rangkaian kegiatan dan pengalaman belajar secara proporsional sesuai durasi ${canonicalAllocatedJP} JP tersebut. Jangan menebak, mengubah, atau menyimpulkan angka JP yang berbeda.`
     : `11. ALOKASI WAKTU: Belum ditentukan. JANGAN mengarang atau memalsukan Alokasi JP.`
 }
 
