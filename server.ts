@@ -1265,6 +1265,158 @@ Kembalikan output JSON sesuai skema:
   return res.json({ success: true, data: fallback, engine: 'pedagogical_engine' });
 });
 
+function extractKeywords(text: string): string[] {
+  if (!text) return [];
+  const STOPWORDS = new Set([
+    'dan', 'atau', 'pada', 'dalam', 'dengan', 'untuk', 'secara', 'yang', 'serta',
+    'dapat', 'mampu', 'peserta', 'didik', 'siswa', 'murid', 'pembelajaran', 'materi',
+    'konsep', 'memahami', 'mengidentifikasi', 'menjelaskan', 'mempraktikkan', 'menganalisis',
+    'merancang', 'melakukan', 'tentang', 'terhadap', 'sebagai', 'melalui', 'proses',
+    'tahap', 'bagian', 'berbagai', 'macam', 'jenis', 'dasar', 'awal', 'akhir', 'menggunakan'
+  ]);
+  const clean = text.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+  const tokens = clean.split(/\s+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  return Array.from(new Set(tokens));
+}
+
+function isCrossCuttingTp(tp?: any): boolean {
+  if (!tp) return false;
+  const full = `${tp.statement || ''} ${tp.contentScope || ''} ${tp.elementName || ''}`.toLowerCase();
+  return (
+    full.includes('profil pelajar pancasila') ||
+    full.includes('profil lulusan') ||
+    full.includes('karakter') ||
+    full.includes('tanggung jawab') ||
+    full.includes('refleksi') ||
+    full.includes('evaluasi diri') ||
+    full.includes('sikap') ||
+    full.includes('kolaborasi')
+  );
+}
+
+function findBestExistingUnitMatch(u: any, existingUnits: any[]): any {
+  if (!Array.isArray(existingUnits) || existingUnits.length === 0) return null;
+
+  // 1. Exact existing id
+  if (u.id) {
+    const match = existingUnits.find(eu => eu.id === u.id);
+    if (match) return match;
+  }
+
+  // 2. Highest overlap of linkedAtpItemIds / linkedTpIds
+  let bestMatch: any = null;
+  let maxOverlap = 0;
+
+  const uAtpIds = new Set(u.linkedAtpItemIds || []);
+  const uTpIds = new Set(u.linkedTpIds || []);
+
+  for (const eu of existingUnits) {
+    let overlapCount = 0;
+    
+    if (Array.isArray(eu.linkedAtpItemIds)) {
+      eu.linkedAtpItemIds.forEach((id: string) => {
+        if (uAtpIds.has(id)) overlapCount += 3; // higher weight for exact ATP step match
+      });
+    }
+    if (Array.isArray(eu.linkedTpIds)) {
+      eu.linkedTpIds.forEach((id: string) => {
+        if (uTpIds.has(id)) overlapCount += 1;
+      });
+    }
+
+    if (overlapCount > maxOverlap) {
+      maxOverlap = overlapCount;
+      bestMatch = eu;
+    }
+  }
+
+  if (maxOverlap > 0) return bestMatch;
+
+  // 3. Semantic title match (using keyword similarity)
+  let bestTitleMatch: any = null;
+  let maxTitleSimilarity = 0.4; // minimum similarity threshold
+
+  const normTitleU = (u.title || '').toLowerCase().replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '').trim();
+  const kwU = extractKeywords(normTitleU);
+
+  for (const eu of existingUnits) {
+    const normTitleEU = (eu.title || '').toLowerCase().replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '').trim();
+    if (normTitleU === normTitleEU) return eu; // exact clean title match
+
+    const kwEU = extractKeywords(normTitleEU);
+    const overlap = kwU.filter(k => kwEU.includes(k));
+    const similarity = overlap.length / Math.max(1, Math.max(kwU.length, kwEU.length));
+    
+    if (similarity > maxTitleSimilarity) {
+      maxTitleSimilarity = similarity;
+      bestTitleMatch = eu;
+    }
+  }
+
+  return bestTitleMatch;
+}
+
+function findBestExistingMaterialMatch(m: any, existingMaterials: any[]): any {
+  if (!Array.isArray(existingMaterials) || existingMaterials.length === 0) return null;
+
+  // 1. Exact existing id
+  if (m.id) {
+    const match = existingMaterials.find(em => em.id === m.id);
+    if (match) return match;
+  }
+
+  // 2. Highest overlap of linkedAtpItemIds / linkedTpIds
+  let bestMatch: any = null;
+  let maxOverlap = 0;
+
+  const mAtpIds = new Set(m.linkedAtpItemIds || []);
+  const mTpIds = new Set(m.linkedTpIds || []);
+
+  for (const em of existingMaterials) {
+    let overlapCount = 0;
+    if (Array.isArray(em.linkedAtpItemIds)) {
+      em.linkedAtpItemIds.forEach((id: string) => {
+        if (mAtpIds.has(id)) overlapCount += 3;
+      });
+    }
+    if (Array.isArray(em.linkedTpIds)) {
+      em.linkedTpIds.forEach((id: string) => {
+        if (mTpIds.has(id)) overlapCount += 1;
+      });
+    }
+
+    if (overlapCount > maxOverlap) {
+      maxOverlap = overlapCount;
+      bestMatch = em;
+    }
+  }
+
+  if (maxOverlap > 0) return bestMatch;
+
+  // 3. Semantic title match
+  let bestTitleMatch: any = null;
+  let maxTitleSimilarity = 0.4;
+
+  const normTitleM = (m.title || '').toLowerCase().trim();
+  const kwM = extractKeywords(normTitleM);
+
+  for (const em of existingMaterials) {
+    const normTitleEM = (em.title || '').toLowerCase().trim();
+    if (normTitleM === normTitleEM) return em;
+
+    const kwEM = extractKeywords(normTitleEM);
+    const overlap = kwM.filter(k => kwEM.includes(k));
+    const similarity = overlap.length / Math.max(1, Math.max(kwM.length, kwEM.length));
+
+    if (similarity > maxTitleSimilarity) {
+      maxTitleSimilarity = similarity;
+      bestTitleMatch = em;
+    }
+  }
+
+  return bestTitleMatch;
+}
+
 // 3c. Endpoint: Canonical AI Generate ATPUnitMappingData (Multi-Material & Semantic Bab Clustering)
 app.post('/api/ai/generate-canonical-atp-unit-mapping', async (req, res) => {
   const {
@@ -1276,7 +1428,7 @@ app.post('/api/ai/generate-canonical-atp-unit-mapping', async (req, res) => {
     atpData,
     cpAnalysisData,
     existingMapping,
-    targetUnitCount = 6,
+    targetUnitCount,
     targetMaterialCountPerUnit,
   } = req.body || {};
 
@@ -1295,7 +1447,7 @@ app.post('/api/ai/generate-canonical-atp-unit-mapping', async (req, res) => {
   const atpMap = new Map<string, (typeof validAtpItems)[0]>();
   validAtpItems.forEach((atp) => atpMap.set(atp.id, atp));
 
-  const count = Math.max(1, Math.min(20, Number(targetUnitCount) || 6));
+  const count = targetUnitCount ? Math.max(1, Math.min(20, Number(targetUnitCount))) : undefined;
 
   const apiKey = resolveApiKey(req);
   if (apiKey) {
@@ -1310,26 +1462,31 @@ PRINSIP & OTORITAS PEDAGOGIS (WAJIB DIPATUHI):
 2. ATP adalah otoritas kronologi / urutan pembelajaran (stepNumber).
 3. Bab / Unit mengelompokkan TP dan langkah ATP yang relevan secara semantik (Semantic Clustering), bukan pembagian butir secara mekanis (misal 12 TP dibagi 6 = 2).
 4. TP dari elemen/domain yang berbeda namun mendukung topik yang sama dapat disatukan dalam satu Bab (misal: TP pemahaman dan TP keterampilan praktis pada topik yang sama).
-5. TP integratif / lintas-elemen (misal: karakter/kebugaran/analisis umum) dapat dikaitkan ke Bab relevan bersama TP konten utama.
-6. Target jumlah Bab adalah ${count} Bab sebagai panduan organisasi. Jika TP/ATP yang tersedia secara alami lebih sesuai dengan jumlah Bab tertentu, gunakan pengelompokan yang paling logis. JANGAN PERNAH membuat TP atau ATP fiktif.
+5. TP integratif / lintas-elemen (misal: karakter/evaluasi diri/analisis umum) dapat dikaitkan ke Bab relevan bersama TP konten utama.
+6. ${
+  count
+    ? `Target jumlah Bab adalah ${count} Bab sebagai panduan organisasi. Jika TP/ATP yang tersedia secara alami lebih sesuai dengan jumlah Bab tertentu, gunakan pengelompokan yang paling logis.`
+    : `Jumlah Bab ditentukan secara alami berdasarkan kesamaan semantik (Semantic Clustering) dari materi TP/ATP. Jangan memaksakan atau menggabungkan materi yang berbeda secara mekanis hanya untuk menuju jumlah unit tertentu.`
+} JANGAN PERNAH membuat TP atau ATP fiktif.
 7. Setiap Bab didekomposisi menjadi Lingkup Materi yang didukung secara autentik oleh TP dan konteks Analisis CP terkait (Lingkup Materi BUKAN sekadar 1:1 dengan langkah ATP). Satu Bab dapat memuat satu atau beberapa Lingkup Materi sesuai kedalaman materi yang didukung secara pedagogis. JANGAN MENGARANG materi generik atau fiktif hanya untuk memenuhi kuota jumlah materi.
 8. Setiap Lingkup Materi harus mencantumkan relasi linkedTpIds dan linkedAtpItemIds dari TP/ATP yang mendukungnya.
+9. Gunakan "TP_CODE" dan "scopeCode" (seperti PGD, AS, dll) sebagai isyarat semantis yang sangat kuat (strong semantic signal) untuk pengelompokan lintas elemen. Sebagai contoh, TP dengan scopeCode yang sama mengindikasikan mereka harus berada dalam keluarga Unit/Bab yang sama. JANGAN melakukan hardcode khusus PJOK.
 ${
   existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0
-    ? `9. OTORITAS GURU (MUTLAK): Guru telah mengisi struktur pemetaan sebelumnya. Nama Bab dan nama Lingkup Materi yang sudah diisi guru TIDAK BOLEH DIUBAH/DITIMPA SAMA SEKALI. Anda hanya bertugas melengkapi nama yang kosong atau menyempurnakan relasi TP/ATP.`
+    ? `10. OTORITAS GURU (MUTLAK): Guru telah mengisi struktur pemetaan sebelumnya. Nama Bab dan nama Lingkup Materi yang sudah diisi guru TIDAK BOLEH DIUBAH/DITIMPA SAMA SEKALI. Anda hanya bertugas melengkapi nama yang kosong atau menyempurnakan relasi TP/ATP.`
     : ''
 }
 
 DATA KURIKULUM:
 - Mata Pelajaran: ${subject}
 - Kelas / Fase: ${grade} (${phase})
-- Target Jumlah Bab: ${count} Bab
+${count ? `- Target Jumlah Bab: ${count} Bab` : '- Target Jumlah Bab: Sesuai keselarasan semantis alami'}
 
 DAFTAR TUJUAN PEMBELAJARAN (TP):
 ${validTpItems
   .map(
     (tp, i) =>
-      `${i + 1}. [TP_ID: ${tp.id}] Kode: ${tp.code || `TP-${i + 1}`} | Elemen: ${tp.elementName || '-'} | Rumusan: "${
+      `${i + 1}. [TP_ID: ${tp.id}] Kode TP: ${tp.code || `TP-${i + 1}`} | ScopeCode: ${tp.scopeCode || 'MAT'} | Elemen: ${tp.elementName || '-'} | Rumusan: "${
         tp.statement
       }" | Lingkup Materi TP: "${tp.contentScope || '-'}" | Kompetensi: "${tp.competence || '-'}"`
   )
@@ -1349,7 +1506,7 @@ ${
     ? `\nKONTEKS ANALISIS CP (REFERENSI PENDUKUNG):\n${cpAnalysisData.items
         .map(
           (cpa, i) =>
-            `${i + 1}. Elemen: ${cpa.elementName} | Kompetensi: ${cpa.cpCompetence} | Lingkup Materi: ${cpa.materialScope}`
+            `${i + 1}. Elemen: ${cpa.elementName} | Kompetensi: ${cpa.cpCompetence} | Lingkup Materi: ${cpa.materialScope} | ScopeCode: ${cpa.scopeCode || 'MAT'}`
         )
         .join('\n')}`
     : ''
@@ -1423,11 +1580,11 @@ Kembalikan respon JSON dengan skema:
                             items: { type: Type.STRING },
                           },
                         },
-                        required: ['title', 'order'],
+                        required: ['title', 'order', 'linkedTpIds', 'linkedAtpItemIds'],
                       },
                     },
                   },
-                  required: ['title', 'order', 'materials'],
+                  required: ['title', 'order', 'linkedTpIds', 'linkedAtpItemIds', 'materials'],
                 },
               },
             },
@@ -1441,21 +1598,12 @@ Kembalikan respon JSON dengan skema:
         // SERVER-SIDE DETERMINISTIC MERGE SAFETY & SANITIZATION
         const rawUnits = parsed.units;
 
-        // Map existing units by order or ID for strict preservation
-        const existingUnitMap = new Map<string, (typeof existingMapping.units)[0]>();
-        if (existingMapping && Array.isArray(existingMapping.units)) {
-          existingMapping.units.forEach((u: any, idx: number) => {
-            if (u.id) existingUnitMap.set(u.id, u);
-            existingUnitMap.set(`order-${u.order || idx + 1}`, u);
-          });
-        }
+        // Map existing units/materials for strict preservation
+        const existingUnitsList = existingMapping && Array.isArray(existingMapping.units) ? existingMapping.units : [];
 
         const sanitizedUnits = rawUnits.map((u: any, uIdx: number) => {
           const unitOrder = u.order || uIdx + 1;
-          const matchedExisting =
-            (u.id && existingUnitMap.get(u.id)) ||
-            existingUnitMap.get(`order-${unitOrder}`) ||
-            (existingMapping?.units && existingMapping.units[uIdx]);
+          const matchedExisting = findBestExistingUnitMatch(u, existingUnitsList);
 
           // Strictly preserve teacher title if non-empty
           const finalTitle =
@@ -1466,12 +1614,20 @@ Kembalikan respon JSON dengan skema:
           const finalUnitId = matchedExisting?.id || u.id || `unit-${Date.now()}-${unitOrder}`;
 
           // Sanitize linked IDs (only allow IDs that exist in canonical TP and ATP)
-          const validLinkedTpIds = Array.isArray(u.linkedTpIds)
+          const validLinkedTpIds: string[] = Array.isArray(u.linkedTpIds)
             ? Array.from(new Set(u.linkedTpIds.filter((id: string) => tpMap.has(id))))
             : [];
-          const validLinkedAtpItemIds = Array.isArray(u.linkedAtpItemIds)
+          const validLinkedAtpItemIds: string[] = Array.isArray(u.linkedAtpItemIds)
             ? Array.from(new Set(u.linkedAtpItemIds.filter((id: string) => atpMap.has(id))))
             : [];
+
+          // LINK CONTRACT: Ensure linkedTpIds contains corresponding tpId of every linkedAtpItemId
+          validLinkedAtpItemIds.forEach(atpId => {
+            const atpItem = atpMap.get(atpId);
+            if (atpItem && atpItem.tpId && !validLinkedTpIds.includes(atpItem.tpId)) {
+              validLinkedTpIds.push(atpItem.tpId);
+            }
+          });
 
           // Sanitize materials
           const existingMaterials = matchedExisting?.materials || [];
@@ -1479,10 +1635,7 @@ Kembalikan respon JSON dengan skema:
 
           const sanitizedMaterials = rawMaterials.map((m: any, mIdx: number) => {
             const matOrder = m.order || mIdx + 1;
-            const matchedMat =
-              (m.id && existingMaterials.find((em: any) => em.id === m.id)) ||
-              existingMaterials.find((em: any) => em.order === matOrder) ||
-              existingMaterials[mIdx];
+            const matchedMat = findBestExistingMaterialMatch(m, existingMaterials);
 
             const finalMatTitle =
               matchedMat && matchedMat.title && matchedMat.title.trim().length > 0
@@ -1491,19 +1644,34 @@ Kembalikan respon JSON dengan skema:
 
             const finalMatId = matchedMat?.id || m.id || `mat-${Date.now()}-${unitOrder}-${matOrder}`;
 
-            const matTpIds = Array.isArray(m.linkedTpIds)
+            const matTpIds: string[] = Array.isArray(m.linkedTpIds)
               ? Array.from(new Set(m.linkedTpIds.filter((id: string) => tpMap.has(id))))
               : [];
-            const matAtpIds = Array.isArray(m.linkedAtpItemIds)
+            const matAtpIds: string[] = Array.isArray(m.linkedAtpItemIds)
               ? Array.from(new Set(m.linkedAtpItemIds.filter((id: string) => atpMap.has(id))))
               : [];
+
+            // LINK CONTRACT: Ensure linkedTpIds contains corresponding tpId of every linkedAtpItemId
+            matAtpIds.forEach(atpId => {
+              const atpItem = atpMap.get(atpId);
+              if (atpItem && atpItem.tpId && !matTpIds.includes(atpItem.tpId)) {
+                matTpIds.push(atpItem.tpId);
+              }
+              // Propagation to unit level
+              if (!validLinkedAtpItemIds.includes(atpId)) {
+                validLinkedAtpItemIds.push(atpId);
+              }
+              if (atpItem && atpItem.tpId && !validLinkedTpIds.includes(atpItem.tpId)) {
+                validLinkedTpIds.push(atpItem.tpId);
+              }
+            });
 
             return {
               id: finalMatId,
               title: finalMatTitle,
               order: matOrder,
-              linkedTpIds: matTpIds.length > 0 ? matTpIds : validLinkedTpIds,
-              linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : validLinkedAtpItemIds,
+              linkedTpIds: matTpIds.length > 0 ? matTpIds : [...validLinkedTpIds],
+              linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : [...validLinkedAtpItemIds],
             };
           });
 
@@ -1550,12 +1718,79 @@ Kembalikan respon JSON dengan skema:
 
         sanitizedUnits.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
+        // COVERAGE CHECK: Ensure all canonical ATPItems are covered by at least one Unit
+        const mappedAtpItemIds = new Set<string>();
+        sanitizedUnits.forEach((u: any) => {
+          if (Array.isArray(u.linkedAtpItemIds)) {
+            u.linkedAtpItemIds.forEach((id: string) => mappedAtpItemIds.add(id));
+          }
+        });
+
+        const missingAtpItems = validAtpItems.filter(atp => !mappedAtpItemIds.has(atp.id));
+        if (missingAtpItems.length > 0) {
+          let canAssignAllSafely = true;
+          for (const missingAtp of missingAtpItems) {
+            const missingTp = missingAtp.tpId ? tpMap.get(missingAtp.tpId) : undefined;
+            let bestUnitIndex = -1;
+            let bestScore = -1;
+
+            sanitizedUnits.forEach((u: any, idx: number) => {
+              let score = 0;
+              const unitTpIds = u.linkedTpIds || [];
+              unitTpIds.forEach((uTpId: string) => {
+                const uTp = tpMap.get(uTpId);
+                if (uTp && missingTp) {
+                  if (uTp.scopeCode && missingTp.scopeCode && uTp.scopeCode === missingTp.scopeCode) {
+                    score += 10;
+                  }
+                  const kwMissing = extractKeywords(`${missingTp.contentScope || ''} ${missingTp.statement || ''}`);
+                  const kwUnitTp = extractKeywords(`${uTp.contentScope || ''} ${uTp.statement || ''}`);
+                  const overlap = kwMissing.filter(k => kwUnitTp.includes(k));
+                  score += overlap.length;
+                }
+              });
+              if (score > bestScore) {
+                bestScore = score;
+                bestUnitIndex = idx;
+              }
+            });
+
+            if (bestUnitIndex !== -1 && bestScore > 0) {
+              const targetUnit = sanitizedUnits[bestUnitIndex];
+              if (!targetUnit.linkedAtpItemIds.includes(missingAtp.id)) {
+                targetUnit.linkedAtpItemIds.push(missingAtp.id);
+              }
+              if (missingAtp.tpId && !targetUnit.linkedTpIds.includes(missingAtp.tpId)) {
+                targetUnit.linkedTpIds.push(missingAtp.tpId);
+              }
+              if (targetUnit.materials && targetUnit.materials.length > 0) {
+                const firstMat = targetUnit.materials[0];
+                if (!firstMat.linkedAtpItemIds.includes(missingAtp.id)) {
+                  firstMat.linkedAtpItemIds.push(missingAtp.id);
+                }
+                if (missingAtp.tpId && !firstMat.linkedTpIds.includes(missingAtp.tpId)) {
+                  firstMat.linkedTpIds.push(missingAtp.tpId);
+                }
+              }
+            } else {
+              canAssignAllSafely = false;
+            }
+          }
+
+          if (!canAssignAllSafely) {
+            console.warn('AI omitted some ATP items and semantic recovery failed.');
+            throw new Error('AI omitted ATP items and semantic recovery failed.');
+          }
+        }
+
         const canonicalResult = {
           id: existingMapping?.id || `aum-${Date.now()}`,
           academicSettingId: existingMapping?.academicSettingId || academicSettingId,
           atpId: atpData?.id || '',
           tpDataId: tpData?.id || '',
           units: sanitizedUnits,
+          basedOnTpUpdatedAt: tpData?.updatedAt,
+          basedOnAtpUpdatedAt: atpData?.updatedAt,
           updatedAt: new Date().toISOString(),
         };
 

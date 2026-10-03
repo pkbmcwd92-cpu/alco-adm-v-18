@@ -465,6 +465,8 @@ export interface ATPUnitMappingData {
   atpId: string;
   tpDataId?: string;
   units: ATPUnitMapping[];
+  basedOnTpUpdatedAt?: string;
+  basedOnAtpUpdatedAt?: string;
   updatedAt: string;
 }
 

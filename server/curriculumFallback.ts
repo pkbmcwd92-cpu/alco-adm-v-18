@@ -693,9 +693,11 @@ export interface FallbackCanonicalUnitMappingParams {
   phase?: string;
   tpData: {
     id?: string;
+    updatedAt?: string;
     items: Array<{
       id: string;
       code?: string;
+      scopeCode?: string;
       elementName?: string;
       statement: string;
       competence?: string;
@@ -707,6 +709,7 @@ export interface FallbackCanonicalUnitMappingParams {
   };
   atpData: {
     id?: string;
+    updatedAt?: string;
     items: Array<{
       id: string;
       stepNumber: number;
@@ -723,6 +726,7 @@ export interface FallbackCanonicalUnitMappingParams {
       id: string;
       elementId?: string;
       elementName: string;
+      scopeCode?: string;
       cpCompetence: string;
       materialScope: string;
       suggestedTp?: string;
@@ -762,7 +766,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     atpData,
     cpAnalysisData,
     existingMapping,
-    targetUnitCount = 6,
+    targetUnitCount,
   } = params;
 
   const validTpItems = Array.isArray(tpData?.items) ? tpData.items : [];
@@ -826,7 +830,6 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       full.includes('tanggung jawab') ||
       full.includes('refleksi') ||
       full.includes('evaluasi diri') ||
-      full.includes('kebugaran') ||
       full.includes('sikap') ||
       full.includes('kolaborasi')
     );
@@ -839,15 +842,17 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     if (!tpA || !tpB) return false;
     if (tpA.id === tpB.id) return true;
 
-    // Cross-cutting TP can integrate with neighboring content
-    if (isCrossCuttingTp(tpA) || isCrossCuttingTp(tpB)) {
-      return true;
-    }
-
     // Direct contentScope match
     const scopeA = tpA.contentScope?.trim().toLowerCase();
     const scopeB = tpB.contentScope?.trim().toLowerCase();
     if (scopeA && scopeB && (scopeA === scopeB || scopeA.includes(scopeB) || scopeB.includes(scopeA))) {
+      return true;
+    }
+
+    // scopeCode match
+    const scA = tpA.scopeCode?.trim().toUpperCase();
+    const scB = tpB.scopeCode?.trim().toUpperCase();
+    if (scA && scB && scA === scB) {
       return true;
     }
 
@@ -858,7 +863,92 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     return overlap.length >= 1;
   };
 
-  // If existingMapping has units, strictly preserve teacher structure and only complete missing fields
+  // Helper matching functions for existing Units / Materials
+  const findBestExistingUnitMatchLocal = (u: any, existingUnits: any[]): any => {
+    if (!Array.isArray(existingUnits) || existingUnits.length === 0) return null;
+    if (u.id) {
+      const match = existingUnits.find(eu => eu.id === u.id);
+      if (match) return match;
+    }
+    let bestMatch: any = null;
+    let maxOverlap = 0;
+    const uAtpIds = new Set(u.linkedAtpItemIds || []);
+    const uTpIds = new Set(u.linkedTpIds || []);
+    for (const eu of existingUnits) {
+      let overlapCount = 0;
+      if (Array.isArray(eu.linkedAtpItemIds)) {
+        eu.linkedAtpItemIds.forEach((id: string) => { if (uAtpIds.has(id)) overlapCount += 3; });
+      }
+      if (Array.isArray(eu.linkedTpIds)) {
+        eu.linkedTpIds.forEach((id: string) => { if (uTpIds.has(id)) overlapCount += 1; });
+      }
+      if (overlapCount > maxOverlap) {
+        maxOverlap = overlapCount;
+        bestMatch = eu;
+      }
+    }
+    if (maxOverlap > 0) return bestMatch;
+    let bestTitleMatch: any = null;
+    let maxTitleSimilarity = 0.4;
+    const normTitleU = (u.title || '').toLowerCase().replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '').trim();
+    const kwU = extractKeywords(normTitleU);
+    for (const eu of existingUnits) {
+      const normTitleEU = (eu.title || '').toLowerCase().replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '').trim();
+      if (normTitleU === normTitleEU) return eu;
+      const kwEU = extractKeywords(normTitleEU);
+      const overlap = kwU.filter(k => kwEU.includes(k));
+      const similarity = overlap.length / Math.max(1, Math.max(kwU.length, kwEU.length));
+      if (similarity > maxTitleSimilarity) {
+        maxTitleSimilarity = similarity;
+        bestTitleMatch = eu;
+      }
+    }
+    return bestTitleMatch;
+  };
+
+  const findBestExistingMaterialMatchLocal = (m: any, existingMaterials: any[]): any => {
+    if (!Array.isArray(existingMaterials) || existingMaterials.length === 0) return null;
+    if (m.id) {
+      const match = existingMaterials.find(em => em.id === m.id);
+      if (match) return match;
+    }
+    let bestMatch: any = null;
+    let maxOverlap = 0;
+    const mAtpIds = new Set(m.linkedAtpItemIds || []);
+    const mTpIds = new Set(m.linkedTpIds || []);
+    for (const em of existingMaterials) {
+      let overlapCount = 0;
+      if (Array.isArray(em.linkedAtpItemIds)) {
+        em.linkedAtpItemIds.forEach((id: string) => { if (mAtpIds.has(id)) overlapCount += 3; });
+      }
+      if (Array.isArray(em.linkedTpIds)) {
+        em.linkedTpIds.forEach((id: string) => { if (mTpIds.has(id)) overlapCount += 1; });
+      }
+      if (overlapCount > maxOverlap) {
+        maxOverlap = overlapCount;
+        bestMatch = em;
+      }
+    }
+    if (maxOverlap > 0) return bestMatch;
+    let bestTitleMatch: any = null;
+    let maxTitleSimilarity = 0.4;
+    const normTitleM = (m.title || '').toLowerCase().trim();
+    const kwM = extractKeywords(normTitleM);
+    for (const em of existingMaterials) {
+      const normTitleEM = (em.title || '').toLowerCase().trim();
+      if (normTitleM === normTitleEM) return em;
+      const kwEM = extractKeywords(normTitleEM);
+      const overlap = kwM.filter(k => kwEM.includes(k));
+      const similarity = overlap.length / Math.max(1, Math.max(kwM.length, kwEM.length));
+      if (similarity > maxTitleSimilarity) {
+        maxTitleSimilarity = similarity;
+        bestTitleMatch = em;
+      }
+    }
+    return bestTitleMatch;
+  };
+
+  // If existingMapping has units, strictly preserve teacher structure and matching
   if (existingMapping && Array.isArray(existingMapping.units) && existingMapping.units.length > 0) {
     const updatedUnits = existingMapping.units.map((unit, uIdx) => {
       const order = unit.order || uIdx + 1;
@@ -891,12 +981,11 @@ export function fallbackGenerateCanonicalATPUnitMapping(
             id: mat.id || `mat-${Date.now()}-${uIdx + 1}-${matOrder}`,
             title: matTitle,
             order: matOrder,
-            linkedTpIds: matLinkedTpIds.length > 0 ? matLinkedTpIds : linkedTpIds,
-            linkedAtpItemIds: matLinkedAtpItemIds.length > 0 ? matLinkedAtpItemIds : linkedAtpItemIds,
+            linkedTpIds: matLinkedTpIds.length > 0 ? matLinkedTpIds : [...linkedTpIds],
+            linkedAtpItemIds: matLinkedAtpItemIds.length > 0 ? matLinkedAtpItemIds : [...linkedAtpItemIds],
           };
         });
       } else {
-        // Decompose unit into distinct supported material scopes from linked TPs (NO generic invention)
         const distinctScopes: string[] = [];
         linkedTps.forEach((tp) => {
           const t = extractTopicFromTp(tp);
@@ -914,19 +1003,18 @@ export function fallbackGenerateCanonicalATPUnitMapping(
               id: `mat-${Date.now()}-${uIdx + 1}-${mIdx + 1}`,
               title: scopeTitle,
               order: mIdx + 1,
-              linkedTpIds: supportingTpIds.length > 0 ? supportingTpIds : linkedTpIds,
-              linkedAtpItemIds: matchingAtps.length > 0 ? matchingAtps.map((a) => a.id) : linkedAtpItemIds,
+              linkedTpIds: supportingTpIds.length > 0 ? supportingTpIds : [...linkedTpIds],
+              linkedAtpItemIds: matchingAtps.length > 0 ? matchingAtps.map((a) => a.id) : [...linkedAtpItemIds],
             };
           });
         } else {
-          // If no TPs linked yet, create 1 material referencing the unit title
           materials = [
             {
               id: `mat-${Date.now()}-${uIdx + 1}-1`,
               title: unitTitle.replace(/^Bab\s+\d+:\s*/i, ''),
               order: 1,
-              linkedTpIds: linkedTpIds,
-              linkedAtpItemIds: linkedAtpItemIds,
+              linkedTpIds: [...linkedTpIds],
+              linkedAtpItemIds: [...linkedAtpItemIds],
             },
           ];
         }
@@ -948,23 +1036,33 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       atpId: atpData.id || '',
       tpDataId: tpData.id || '',
       units: updatedUnits,
+      basedOnTpUpdatedAt: tpData.updatedAt,
+      basedOnAtpUpdatedAt: atpData.updatedAt,
       updatedAt: new Date().toISOString(),
     };
   }
 
   // Initial Generation: Deterministic Semantic Clustering along canonical ATP sequence
-  const targetCount = Math.max(1, Math.min(20, targetUnitCount || 6));
+  const count = targetUnitCount ? Math.max(1, Math.min(20, targetUnitCount)) : undefined;
 
-  // Build semantic clusters along ATP chronological sequence
+  // Split into cross-cutting and non-cross-cutting to prevent bridging
+  const nonCrossCuttingAtpItems = validAtpItems.filter(atp => {
+    const tp = atp.tpId ? tpMap.get(atp.tpId) : undefined;
+    return !isCrossCuttingTp(tp);
+  });
+  const crossCuttingAtpItems = validAtpItems.filter(atp => {
+    const tp = atp.tpId ? tpMap.get(atp.tpId) : undefined;
+    return isCrossCuttingTp(tp);
+  });
+
   const rawClusters: Array<(typeof validAtpItems)> = [];
   let currentCluster: (typeof validAtpItems) = [];
 
-  validAtpItems.forEach((atp) => {
+  nonCrossCuttingAtpItems.forEach((atp) => {
     if (currentCluster.length === 0) {
       currentCluster.push(atp);
     } else {
       const atpTp = atp.tpId ? tpMap.get(atp.tpId) : undefined;
-      // Check relationship with existing TPs in current cluster
       const clusterTps = currentCluster.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
       const isRelated = clusterTps.some((cTp) => areTpsSemanticallyRelated(atpTp, cTp));
 
@@ -981,41 +1079,44 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     rawClusters.push(currentCluster);
   }
 
-  // Organic balancing against targetCount (NEVER arithmetic division, only sequence-preserving merges/splits)
   let semanticClusters = rawClusters;
+  if (semanticClusters.length === 0 && validAtpItems.length > 0) {
+    semanticClusters = [[...validAtpItems]];
+  }
 
-  // If there are too many small adjacent clusters compared to targetCount, merge most related adjacent ones
-  while (semanticClusters.length > targetCount && semanticClusters.length > 1) {
-    let bestMergeIdx = 0;
-    let highestSimilarity = -1;
+  // Organic balancing against target count (only if count is specified)
+  if (count) {
+    while (semanticClusters.length > count && semanticClusters.length > 1) {
+      let bestMergeIdx = 0;
+      let highestSimilarity = -1;
 
-    for (let i = 0; i < semanticClusters.length - 1; i++) {
-      const c1 = semanticClusters[i];
-      const c2 = semanticClusters[i + 1];
-      const tp1 = c1.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
-      const tp2 = c2.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
+      for (let i = 0; i < semanticClusters.length - 1; i++) {
+        const c1 = semanticClusters[i];
+        const c2 = semanticClusters[i + 1];
+        const tp1 = c1.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
+        const tp2 = c2.map((a) => (a.tpId ? tpMap.get(a.tpId) : undefined)).filter(Boolean);
 
-      let sim = 0;
-      tp1.forEach((t1) => {
-        tp2.forEach((t2) => {
-          if (areTpsSemanticallyRelated(t1, t2)) sim += 2;
-          const kw1 = extractKeywords(t1?.statement || '');
-          const kw2 = extractKeywords(t2?.statement || '');
-          sim += kw1.filter((k) => kw2.includes(k)).length;
+        let sim = 0;
+        tp1.forEach((t1) => {
+          tp2.forEach((t2) => {
+            if (areTpsSemanticallyRelated(t1, t2)) sim += 2;
+            const kw1 = extractKeywords(t1?.statement || '');
+            const kw2 = extractKeywords(t2?.statement || '');
+            sim += kw1.filter((k) => kw2.includes(k)).length;
+          });
         });
-      });
 
-      // Prefer merging small single-item clusters
-      if (c1.length === 1 || c2.length === 1) sim += 1;
+        if (c1.length === 1 || c2.length === 1) sim += 1;
 
-      if (sim > highestSimilarity) {
-        highestSimilarity = sim;
-        bestMergeIdx = i;
+        if (sim > highestSimilarity) {
+          highestSimilarity = sim;
+          bestMergeIdx = i;
+        }
       }
-    }
 
-    const merged = [...semanticClusters[bestMergeIdx], ...semanticClusters[bestMergeIdx + 1]];
-    semanticClusters.splice(bestMergeIdx, 2, merged);
+      const merged = [...semanticClusters[bestMergeIdx], ...semanticClusters[bestMergeIdx + 1]];
+      semanticClusters.splice(bestMergeIdx, 2, merged);
+    }
   }
 
   // Build Bab units from the semantic clusters
@@ -1037,6 +1138,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
   semanticClusters.forEach((cluster, cIdx) => {
     const unitOrder = cIdx + 1;
     const unitId = `unit-${Date.now()}-${unitOrder}`;
+    
     const linkedAtpItemIds = cluster.map((a) => a.id);
     const linkedTpIdsSet = new Set<string>();
     cluster.forEach((a) => {
@@ -1044,6 +1146,29 @@ export function fallbackGenerateCanonicalATPUnitMapping(
         linkedTpIdsSet.add(a.tpId);
       }
     });
+
+    // Link relevant cross-cutting ATP items to their semantically matching units without bridging
+    crossCuttingAtpItems.forEach((ccAtp) => {
+      const ccTp = ccAtp.tpId ? tpMap.get(ccAtp.tpId) : undefined;
+      if (!ccTp) return;
+
+      const unitTps = Array.from(linkedTpIdsSet).map(id => tpMap.get(id)).filter(Boolean);
+      const hasOverlap = unitTps.some(uTp => {
+        const kwCC = extractKeywords(`${ccTp.contentScope || ''} ${ccTp.statement || ''}`);
+        const kwUTp = extractKeywords(`${uTp.contentScope || ''} ${uTp.statement || ''}`);
+        return kwCC.some(k => kwUTp.includes(k));
+      });
+
+      if (hasOverlap || isCrossCuttingTp(ccTp)) {
+        if (!linkedTpIdsSet.has(ccAtp.tpId!)) {
+          linkedTpIdsSet.add(ccAtp.tpId!);
+        }
+        if (!linkedAtpItemIds.includes(ccAtp.id)) {
+          linkedAtpItemIds.push(ccAtp.id);
+        }
+      }
+    });
+
     const linkedTpIds = Array.from(linkedTpIdsSet);
     const linkedTps = linkedTpIds.map((id) => tpMap.get(id)).filter(Boolean);
 
@@ -1062,7 +1187,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
 
     const unitTitle = `Bab ${unitOrder}: ${mainTopic.replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, '')}`;
 
-    // Decompose into distinct supported Lingkup Materi (No generic inventions, no forced min 2)
+    // Decompose into distinct supported Lingkup Materi
     const materials: Array<{
       id: string;
       title: string;
@@ -1071,7 +1196,6 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       linkedAtpItemIds: string[];
     }> = [];
 
-    // Collect all genuine material scopes from linked TPs and CP Analysis items
     const distinctScopeMap = new Map<string, { tpIds: Set<string>; atpIds: Set<string> }>();
 
     linkedTps.forEach((tp) => {
@@ -1089,7 +1213,6 @@ export function fallbackGenerateCanonicalATPUnitMapping(
 
     let matIndex = 1;
     distinctScopeMap.forEach((entry, normKey) => {
-      // Find original casing
       const originalTp = linkedTps.find((t) => extractTopicFromTp(t).toLowerCase().trim() === normKey);
       const title = originalTp ? extractTopicFromTp(originalTp) : normKey;
 
@@ -1100,13 +1223,12 @@ export function fallbackGenerateCanonicalATPUnitMapping(
         id: `mat-${Date.now()}-${unitOrder}-${matIndex}`,
         title,
         order: matIndex,
-        linkedTpIds: matTpIds.length > 0 ? matTpIds : linkedTpIds,
-        linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : linkedAtpItemIds,
+        linkedTpIds: matTpIds.length > 0 ? matTpIds : [...linkedTpIds],
+        linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : [...linkedAtpItemIds],
       });
       matIndex++;
     });
 
-    // If somehow no materials extracted, use the main topic as the single supported material
     if (materials.length === 0) {
       materials.push({
         id: `mat-${Date.now()}-${unitOrder}-1`,
@@ -1133,6 +1255,8 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     atpId: atpData.id || '',
     tpDataId: tpData.id || '',
     units,
+    basedOnTpUpdatedAt: tpData.updatedAt,
+    basedOnAtpUpdatedAt: atpData.updatedAt,
     updatedAt: new Date().toISOString(),
   };
 }
