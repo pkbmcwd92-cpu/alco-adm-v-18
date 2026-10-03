@@ -1170,7 +1170,25 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       });
 
       const ccScopeClean = (ccTp.contentScope || '').toLowerCase().trim();
-      const isTrulyGlobal = !ccTp.scopeCode || ccTp.scopeCode.trim().toUpperCase() === 'MAT' || ccTp.scopeCode.trim().toUpperCase() === 'GEN' || ccScopeClean === '';
+      
+      const unspecificScopeCode = !ccTp.scopeCode || 
+        ccTp.scopeCode.trim() === '' || 
+        ccTp.scopeCode.trim().toUpperCase() === 'MAT' || 
+        ccTp.scopeCode.trim().toUpperCase() === 'GEN';
+
+      const genericWords = ['profil', 'pancasila', 'karakter', 'evaluasi', 'diri', 'refleksi', 'sikap', 'tanggung', 'jawab', 'nilai', 'sosial', 'moral', 'perilaku', 'akhlak', 'gotong', 'royong', 'mandiri', 'kreatif', 'kritis', 'kebinekaan', 'global', 'spiritual', 'emosional'];
+      const topicalKeywords = [
+        'gerak', 'lokomotor', 'nonlokomotor', 'manipulatif', 'senam', 'bola', 'permainan', 'atletik', 'kebugaran', 'jasmani', 'kesehatan', 'renang', 'air', 'pola', 'ritmik', 'irama', 'pencak', 'silat', 'bela', 'diri', 'sehat', 'makanan', 'gizi', 'penyakit', 'bahaya', 'narkoba', 'napza', 'seksual', 'p3k', 'cedera'
+      ];
+
+      const cleanWords = ccScopeClean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      const hasSpecificTopic = cleanWords.some(w => {
+        if (topicalKeywords.includes(w)) return true;
+        if (w.length > 3 && !genericWords.includes(w)) return true;
+        return false;
+      });
+
+      const isTrulyGlobal = unspecificScopeCode && (!ccScopeClean || ccScopeClean === '' || !hasSpecificTopic);
 
       if (hasOverlap || isTrulyGlobal) {
         if (!linkedTpIdsSet.has(ccAtp.tpId!)) {
