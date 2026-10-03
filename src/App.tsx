@@ -460,6 +460,14 @@ export function App() {
         updatedAt: '',
       };
     }
+
+    const annualJPRef = runtimeContext.annualData?.annualJPReference;
+    const weeklyJP =
+      annualJPRef?.referenceWeeklyEquivalentJP !== undefined &&
+      annualJPRef?.referenceWeeklyEquivalentJP !== null
+        ? annualJPRef.referenceWeeklyEquivalentJP
+        : undefined;
+
     return {
       id: activeYearPlan.id,
       profileId: activeYearPlan.profileId,
@@ -472,9 +480,11 @@ export function App() {
       classSection: activeYearPlan.classSection,
       phase: activeYearPlan.phase || '',
       subject: activeYearPlan.subject,
+      totalHoursPerWeek: weeklyJP,
+      regulationReference: annualJPRef?.regulationReference,
       updatedAt: activeYearPlan.updatedAt,
     };
-  }, [activeYearPlan, activeProfile]);
+  }, [activeYearPlan, activeProfile, runtimeContext.annualData?.annualJPReference]);
 
   const isActiveSemesterValid =
     !!activeSemesterPlan &&
@@ -486,6 +496,14 @@ export function App() {
     if (!activeYearPlan || !activeSemesterPlan || !isActiveSemesterValid) {
       return undefined;
     }
+
+    const annualJPRef = runtimeContext.annualData?.annualJPReference;
+    const weeklyJP =
+      annualJPRef?.referenceWeeklyEquivalentJP !== undefined &&
+      annualJPRef?.referenceWeeklyEquivalentJP !== null
+        ? annualJPRef.referenceWeeklyEquivalentJP
+        : undefined;
+
     return {
       id: activeSemesterPlan.id,
       profileId: activeYearPlan.profileId,
@@ -500,9 +518,11 @@ export function App() {
       grade: activeYearPlan.grade,
       phase: activeYearPlan.phase || '',
       subject: activeYearPlan.subject,
+      totalHoursPerWeek: weeklyJP,
+      regulationReference: annualJPRef?.regulationReference,
       updatedAt: activeSemesterPlan.updatedAt,
     };
-  }, [activeYearPlan, activeSemesterPlan, isActiveSemesterValid]);
+  }, [activeYearPlan, activeSemesterPlan, isActiveSemesterValid, runtimeContext.annualData?.annualJPReference]);
 
   const effectiveAdminAcademicSetting = isK13(transitionalAcademicSetting)
     ? transitionalAcademicSetting
