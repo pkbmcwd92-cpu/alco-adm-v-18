@@ -124,29 +124,115 @@ export function fallbackGenerateTP(params: FallbackGenerateTPParams) {
     cpAnalysisItemIds: string[];
   }> = [];
 
+  // Indonesian stopwords for keyword extraction
+  const STOPWORDS = new Set([
+    'dan', 'atau', 'pada', 'dalam', 'dengan', 'untuk', 'secara', 'yang', 'serta',
+    'dapat', 'mampu', 'peserta', 'didik', 'siswa', 'murid', 'pembelajaran', 'materi',
+    'konsep', 'memahami', 'mengidentifikasi', 'menjelaskan', 'mempraktikkan', 'menganalisis',
+    'merancang', 'melakukan', 'tentang', 'terhadap', 'sebagai', 'melalui', 'proses',
+    'tahap', 'bagian', 'berbagai', 'macam', 'jenis', 'dasar', 'awal', 'akhir', 'menggunakan'
+  ]);
+
+  const extractKeywords = (text: string): string[] => {
+    if (!text) return [];
+    const clean = text.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+    return clean.split(/\s+/).filter((t) => t.length > 2 && !STOPWORDS.has(t));
+  };
+
+  const getCompetenceTier = (comp: string): 'KNOWLEDGE' | 'SKILL' | 'ANALYSIS' | 'CHARACTER' | 'GENERAL' => {
+    const lower = (comp || '').toLowerCase();
+    if (lower.includes('paham') || lower.includes('jelas') || lower.includes('identifikasi') || lower.includes('kenal') || lower.includes('sebut') || lower.includes('deskripsi')) {
+      return 'KNOWLEDGE';
+    }
+    if (lower.includes('praktik') || lower.includes('terap') || lower.includes('laku') || lower.includes('buat') || lower.includes('saji') || lower.includes('peraga') || lower.includes('rancang')) {
+      return 'SKILL';
+    }
+    if (lower.includes('analisis') || lower.includes('evaluasi') || lower.includes('banding') || lower.includes('kritisi') || lower.includes('simpul')) {
+      return 'ANALYSIS';
+    }
+    if (lower.includes('refleksi') || lower.includes('sikap') || lower.includes('karakter') || lower.includes('tanggung jawab') || lower.includes('bugar') || lower.includes('kolaborasi')) {
+      return 'CHARACTER';
+    }
+    return 'GENERAL';
+  };
+
   if (cpAnalysisItems.length > 0) {
-    // Generate derived TP directly from each CP Analysis item
-    cpAnalysisItems.forEach((cpa) => {
-      const elemName = cpa.elementName?.trim() || '';
-      const comp = cpa.cpCompetence?.trim() || 'Memahami & Menerapkan';
-      const scope = cpa.materialScope?.trim() || '';
-      const suggested = cpa.suggestedTp?.trim();
+    // SEMANTIC DECOMPOSITION & AGGREGATION (Not 1:1 CPAnalysisItem = 1 TP)
+    const visitedIndices = new Set<number>();
 
-      const statement = suggested && suggested.length > 10
-        ? suggested
-        : `Peserta didik mampu ${comp.toLowerCase()} ${scope} secara mandiri dan bernalar kritis.`;
+    for (let i = 0; i < cpAnalysisItems.length; i++) {
+      if (visitedIndices.has(i)) continue;
+      const cpaA = cpAnalysisItems[i];
+      const tierA = getCompetenceTier(cpaA.cpCompetence || '');
+      const elemA = (cpaA.elementName || '').trim();
+      const scopeA = (cpaA.materialScope || '').trim();
+      const kwA = extractKeywords(`${scopeA} ${cpaA.suggestedTp || ''}`);
 
-      rawGeneratedItems.push({
-        code: `${codePrefix}${counter++}`,
-        elementName: elemName,
-        statement,
-        competence: comp,
-        contentScope: scope,
-        p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
-        graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
-        cpAnalysisItemIds: cpa.id ? [cpa.id] : [],
-      });
-    });
+      const mergedAnalysisIds: string[] = [cpaA.id].filter(Boolean);
+      const mergedScopes: string[] = [scopeA].filter(Boolean);
+      visitedIndices.add(i);
+
+      // Check if subsequent analysis items are semantically close enough to merge
+      for (let j = i + 1; j < cpAnalysisItems.length; j++) {
+        if (visitedIndices.has(j)) continue;
+        const cpaB = cpAnalysisItems[j];
+        const tierB = getCompetenceTier(cpaB.cpCompetence || '');
+        const elemB = (cpaB.elementName || '').trim();
+        const scopeB = (cpaB.materialScope || '').trim();
+        const kwB = extractKeywords(`${scopeB} ${cpaB.suggestedTp || ''}`);
+
+        // Merge condition: same competence tier + shared keywords/element + neither is overly broad
+        const sharesKeywords = kwA.some((k) => kwB.includes(k));
+        const sameElement = elemA && elemB && elemA.toLowerCase() === elemB.toLowerCase();
+
+        if (tierA === tierB && (sharesKeywords || (sameElement && mergedScopes.length < 2))) {
+          mergedAnalysisIds.push(cpaB.id);
+          if (scopeB && !mergedScopes.some((s) => s.toLowerCase() === scopeB.toLowerCase())) {
+            mergedScopes.push(scopeB);
+          }
+          visitedIndices.add(j);
+        }
+      }
+
+      // Check for decomposition: If single item has clearly distinct compound scopes separated by semicolon or compound keywords
+      const rawScope = mergedScopes.join(', ');
+      const compoundParts = scopeA.split(/[;\n]/).map((p) => p.trim()).filter((p) => p.length > 8);
+
+      if (mergedAnalysisIds.length === 1 && compoundParts.length > 1) {
+        // Decompose into focused TPs
+        compoundParts.forEach((part) => {
+          const comp = cpaA.cpCompetence?.trim() || 'Memahami & Menerapkan';
+          rawGeneratedItems.push({
+            code: `${codePrefix}${counter++}`,
+            elementName: elemA,
+            statement: `Peserta didik mampu ${comp.toLowerCase()} ${part} secara mandiri dan bernalar kritis.`,
+            competence: comp,
+            contentScope: part,
+            p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
+            graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
+            cpAnalysisItemIds: mergedAnalysisIds,
+          });
+        });
+      } else {
+        // Coherent merged or single TP
+        const comp = cpaA.cpCompetence?.trim() || 'Memahami & Menerapkan';
+        const finalScope = mergedScopes.length > 0 ? mergedScopes.join(' serta ') : (scopeA || 'Materi Pokok');
+        const statement = cpaA.suggestedTp && mergedAnalysisIds.length === 1 && cpaA.suggestedTp.length > 15
+          ? cpaA.suggestedTp
+          : `Peserta didik mampu ${comp.toLowerCase()} ${finalScope} secara mandiri dan bernalar kritis.`;
+
+        rawGeneratedItems.push({
+          code: `${codePrefix}${counter++}`,
+          elementName: elemA,
+          statement,
+          competence: comp,
+          contentScope: finalScope,
+          p3Dimensions: ['Bernalar Kritis', 'Mandiri'],
+          graduateProfileDimensions: ['Bernalar Kritis', 'Mandiri'],
+          cpAnalysisItemIds: mergedAnalysisIds,
+        });
+      }
+    }
   } else if (validElements.length > 0) {
     validElements.forEach((elem) => {
       const elemName = elem.name ? elem.name.trim() : '';

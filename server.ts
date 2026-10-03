@@ -600,16 +600,25 @@ app.post('/api/ai/generate-tp', async (req, res) => {
   if (apiKey) {
     try {
       const ai = createAIClient(apiKey);
-      const prompt = `Anda adalah ahli perancangan kurikulum pendidikan nasional Indonesia (Kurikulum Merdeka).
-Tugas Anda adalah merumuskan Tujuan Pembelajaran (TP) yang diturunkan SECARA KETAT dan EKSPLISIT dari Capaian Pembelajaran (CP) dan Hasil Analisis CP yang diberikan di bawah ini.
+      const prompt = `Anda adalah pakar perancangan kurikulum pendidikan nasional Indonesia (Kurikulum Merdeka).
+Tugas Anda adalah merumuskan Tujuan Pembelajaran (TP) yang diturunkan melalui analisis pedagogis bertahap:
+CP → Elemen CP → Analisis CP → Dekomposisi & Agregasi Semantis TP → Rumusan TP.
 
-PRINSIP PENETAPAN TP:
-1. Jumlah dan fokus TP ditentukan secara murni dari kebutuhan ketercakupan elemen CP dan Analisis CP, BUKAN berdasarkan kuota atau target angka tertentu.
-2. Setiap TP HARUS memuat:
-   - Kompetensi (KKO yang terukur, misal Taksonomi Bloom/Anderson).
-   - Lingkup Materi (konten esensial yang dipelajari).
-3. Format rumusan TP: "Peserta didik mampu [Kompetensi/KKO] [Lingkup Materi] melalui [Konteks/Aktivitas/Kondisi] secara [Karakter/Kriteria]."
-4. Setiap butir TP HARUS menautkan ID butir Analisis CP yang menjadi rujukan langsung dalam field "cpAnalysisItemIds" (gunakan persis ID yang tercantum di bawah). JANGAN PERNAH mengarang ID Analisis CP fiktif.
+PRINSIP PEDAGOGIS & GRANULARITAS TP (WAJIB DIPATUHI):
+1. BUKAN KUOTA & BUKAN 1:1 MEKANIS:
+   - Jumlah TP adalah hasil murni analisis kurikulum, BUKAN berdasarkan target kuota angka.
+   - JANGAN mengasumsikan 1 Butir Analisis CP = 1 TP secara kaku.
+2. AGREGASI & DEKOMPOSISI SEMANTIS:
+   - GABUNGKAN (MERGE): Beberapa butir Analisis CP yang sangat erat (misal mendukung satu tujuan pembelajaran yang utuh pada topik yang sama) dapat dirangkum menjadi 1 TP koheren yang memuat multiple ID pada "cpAnalysisItemIds".
+   - PISAHKAN (KEEP SEPARATE): Kompetensi atau sasaran belajar yang berbeda secara mendasar (misal: pengetahuan/pemahaman vs keterampilan/kinerja/praktik vs penerapan/analisis vs karakter/refleksi) HARUS tetap menjadi butir TP terpisah meskipun topiknya serupa.
+   - DEKOMPOSISI (DECOMPOSE): Satu butir Analisis CP yang memuat cakupan materi atau kompetensi majemuk/luas harus dipecah menjadi beberapa TP yang terfokus, teramati, dan terukur.
+   - LINTAS-ELEMEN: TP dapat menautkan Analisis CP lintas elemen jika saling mendukung dalam satu capaian pembelajaran terpadu.
+3. KUALITAS BUTIR TP:
+   - Setiap TP harus eksplisit memuat: Kompetensi (KKO operasional terukur) dan Lingkup Materi (konten esensial).
+   - Format standar: "Peserta didik mampu [Kompetensi/KKO] [Lingkup Materi] melalui [Konteks/Aktivitas/Kondisi] secara [Karakter/Kriteria]."
+   - Hindari TP yang terlalu luas (menggabungkan kompetensi yang tidak berhubungan) dan hindari TP yang terlalu terfragmentasi (jangan jadikan contoh aktivitas kecil sebagai TP tersendiri).
+4. PELACAKAN SILSILAH (LINEAGE):
+   - Setiap butir TP HARUS mencantumkan ID butir Analisis CP pendukungnya pada "cpAnalysisItemIds" (bisa 1 ID atau lebih). JANGAN PERNAH mengarang ID fiktif.
 ${
   Array.isArray(existingTps) && existingTps.length > 0
     ? `5. OTORITAS GURU (SELARASKAN TP EKSISTING): Guru telah memiliki daftar TP sebelumnya. Pertahankan rumusan dan kode TP yang sudah baik, selaraskan dengan Analisis CP, dan lengkapi atribut yang masih kosong atau belum optimal tanpa merusak struktur kerja guru.`
@@ -640,7 +649,7 @@ ${existingTps.map((t: any, idx: number) => `${idx + 1}. [Kode: ${t.code || '-'}]
     : ''
 }
 
-Rumuskan butir-butir TP yang sistematis dan mencakup seluruh esensi kompetensi dan materi di atas.
+Lakukan analisis keterkaitan kurikulum dan rumuskan butir-butir TP yang koheren dan bermakna.
 Kembalikan respon dalam format JSON sesuai schema:`;
 
       const response = await generateContentWithRetry(ai, {
