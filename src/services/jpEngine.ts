@@ -1561,7 +1561,20 @@ export function resolveSemesterCapacityV5(
       ? Math.ceil(effectiveWeeks)
       : null;
 
-  const actualScheduledWeeklyJP = jpSetting?.actualScheduledWeeklyJP ?? null;
+  const explicitSemesterJP =
+    jpSetting?.actualScheduledWeeklyJP !== undefined && jpSetting?.actualScheduledWeeklyJP !== null
+      ? jpSetting.actualScheduledWeeklyJP
+      : null;
+
+  const parentYearPlanId = sp?.yearPlanId;
+  const annualJPRef =
+    parentYearPlanId && (state as any).annualJPReferences
+      ? (state as any).annualJPReferences.find((e: any) => e.yearPlanId === parentYearPlanId)?.value
+      : undefined;
+
+  const fallbackAnnualJP = annualJPRef?.referenceWeeklyEquivalentJP ?? null;
+
+  const actualScheduledWeeklyJP = explicitSemesterJP !== null ? explicitSemesterJP : fallbackAnnualJP;
 
   let availableJP: number | null = null;
   if (

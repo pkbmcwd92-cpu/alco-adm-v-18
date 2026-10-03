@@ -193,13 +193,30 @@ export const TimePlanningManager: React.FC<TimePlanningManagerProps> = ({
   const [isOverridden, setIsOverridden] = useState<boolean>(calendar?.isOverridden || false);
   const [overrideReason, setOverrideReason] = useState<string>(calendar?.overrideReason || '');
 
-  // JP per week - SSOT: semesterJPSetting.actualScheduledWeeklyJP (null if unresolved)
+  // JP per week - SSOT: semesterJPSetting.actualScheduledWeeklyJP (fallback to Annual JP Reference)
+  const annualJPFromSetting =
+    academicSetting.totalHoursPerWeek ?? academicSetting.subjectWeeklyJP ?? null;
+
+  const annualJPRef = useMemo(() => {
+    try {
+      const v5State = loadStorageV5();
+      const matchedSp = v5State.semesterPlans.find((sp) => sp.id === effectiveSemesterPlanId);
+      if (matchedSp) {
+        return (v5State as any).annualJPReferences?.find((ref: any) => ref.yearPlanId === matchedSp.yearPlanId)?.value;
+      }
+    } catch {}
+    return null;
+  }, [effectiveSemesterPlanId]);
+
+  const fallbackAnnualJP =
+    annualJPRef?.referenceWeeklyEquivalentJP ?? annualJPFromSetting ?? officialRule.weeklyJP ?? null;
+
   const initialJP =
     semesterJPSetting?.actualScheduledWeeklyJP !== undefined && semesterJPSetting?.actualScheduledWeeklyJP !== null
       ? semesterJPSetting.actualScheduledWeeklyJP
       : calendar?.jpPerWeek !== undefined && calendar?.jpPerWeek !== null
       ? calendar.jpPerWeek
-      : null;
+      : fallbackAnnualJP;
 
   const [jpPerWeek, setJpPerWeek] = useState<number | null>(initialJP);
 
@@ -273,7 +290,7 @@ export const TimePlanningManager: React.FC<TimePlanningManagerProps> = ({
         ? semesterJPSetting.actualScheduledWeeklyJP
         : calendar?.jpPerWeek !== undefined && calendar?.jpPerWeek !== null
         ? calendar.jpPerWeek
-        : null;
+        : fallbackAnnualJP;
     setJpPerWeek(resolvedJP);
 
     setOnlineDiscovery(null);
@@ -362,9 +379,9 @@ export const TimePlanningManager: React.FC<TimePlanningManagerProps> = ({
     } else if (calendar?.jpPerWeek !== undefined && calendar?.jpPerWeek !== null) {
       setJpPerWeek(calendar.jpPerWeek);
     } else {
-      setJpPerWeek(null);
+      setJpPerWeek(fallbackAnnualJP);
     }
-  }, [semesterJPSetting?.actualScheduledWeeklyJP, calendar?.jpPerWeek]);
+  }, [semesterJPSetting?.actualScheduledWeeklyJP, calendar?.jpPerWeek, fallbackAnnualJP]);
 
   // Derived calculations for JP & Calendar completeness
   const isCalendarConfigComplete = Boolean(

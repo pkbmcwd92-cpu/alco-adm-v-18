@@ -40,7 +40,6 @@ import {
   validateAnnualMerdekaSettingReadiness,
 } from '../services/academicSettingReadiness';
 import { isValidDocumentDate } from '../services/documentDateService';
-import { TeacherTeachingLoadModal } from './TeacherTeachingLoadModal';
 
 interface AcademicSettingsProps {
   setting?: AcademicSetting | null;
@@ -81,7 +80,6 @@ const AcademicSettingsForm: React.FC<AcademicSettingsFormProps> = ({
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
-  const [showTeachingLoadModal, setShowTeachingLoadModal] = useState(false);
 
   // Derive official JP lookup using centralized JP Engine
   const officialJpInfo = useMemo(() => {
@@ -644,19 +642,11 @@ const AcademicSettingsForm: React.FC<AcademicSettingsFormProps> = ({
                       <button
                         type="button"
                         onClick={handleApplyOfficialJP}
-                        className="text-[11px] text-blue-600 hover:text-blue-800 underline font-medium"
+                        className="text-[11px] text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
                       >
                         Gunakan JP Resmi ({officialJpInfo.weeklyJP} JP)
                       </button>
                     )}
-                  <button
-                    type="button"
-                    onClick={() => setShowTeachingLoadModal(true)}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-md transition-colors"
-                  >
-                    <UserCheck className="w-3 h-3 text-purple-600" />
-                    <span>Validasi 24 JP Guru</span>
-                  </button>
                 </div>
               </div>
 
@@ -714,9 +704,6 @@ const AcademicSettingsForm: React.FC<AcademicSettingsFormProps> = ({
                     </span>
                   </div>
                 )}
-                <div className="text-[10px] text-slate-400">
-                  * Catatan: JP Mapel berasal dari struktur kurikulum. Beban tatap muka guru dihitung terpisah (min. 24 JP/minggu).
-                </div>
               </div>
             </div>
           </div>
@@ -853,14 +840,6 @@ const AcademicSettingsForm: React.FC<AcademicSettingsFormProps> = ({
           </div>
         </div>
       )}
-
-      {/* TEACHER TEACHING LOAD & JP VALIDATION MODAL */}
-      <TeacherTeachingLoadModal
-        isOpen={showTeachingLoadModal}
-        onClose={() => setShowTeachingLoadModal(false)}
-        currentSetting={formData}
-        teacherProfile={profile}
-      />
     </div>
   );
 };

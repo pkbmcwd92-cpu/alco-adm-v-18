@@ -29,7 +29,9 @@ import {
   CalendarDay,
   TimeAllocation,
   SemesterJPSetting,
+  AnnualJPReference,
 } from './types';
+import { getSubjectJP } from './services/jpEngine';
 import {
   AppStorageStateV5,
   AdministrationWorkspaceV5,
@@ -567,17 +569,77 @@ export function App() {
     customWorkspaceName?: string,
     documentDate?: string
   ): boolean => {
-    if (activeWorkspace) {
-      if (customWorkspaceName?.trim()) {
-        try {
-          renameWorkspaceV5(activeWorkspace.id, customWorkspaceName.trim());
-        } catch {
-          // ignore error
+    if (!activeYearPlan) return false;
+
+    try {
+      const state = loadStorageV5();
+
+      // 1. Sync active YearPlan identity fields
+      const yp = state.yearPlans.find((y) => y.id === activeYearPlan.id);
+      if (yp) {
+        if (setting.curriculumType) yp.curriculumType = setting.curriculumType;
+        if (setting.academicYear) yp.academicYear = setting.academicYear;
+        if (setting.level) yp.level = setting.level as any;
+        if (setting.grade) yp.grade = setting.grade;
+        if (setting.classSection !== undefined) yp.classSection = setting.classSection;
+        if (setting.subject) yp.subject = setting.subject;
+        if (setting.phase) yp.phase = setting.phase;
+        yp.updatedAt = new Date().toISOString();
+      }
+
+      // 2. Sync workspace name & documentDate
+      if (activeWorkspace) {
+        const ws = state.workspaces.find((w) => w.id === activeWorkspace.id);
+        if (ws) {
+          if (customWorkspaceName?.trim()) {
+            ws.name = customWorkspaceName.trim();
+          }
+          if (documentDate !== undefined) {
+            ws.documentDate = documentDate;
+          }
+          ws.updatedAt = new Date().toISOString();
         }
       }
+
+      // 3. Persist canonical AnnualJPReference
+      const officialJpInfo = getSubjectJP({
+        curriculum: setting.curriculum,
+        level: setting.level || 'SD',
+        grade: setting.grade,
+        subject: setting.subject,
+      });
+
+      const confirmedWeeklyJP =
+        setting.totalHoursPerWeek !== null && setting.totalHoursPerWeek !== undefined
+          ? setting.totalHoursPerWeek
+          : null;
+
+      const annualJPRef: AnnualJPReference = {
+        officialAnnualJP: officialJpInfo.annualJP ?? null,
+        referenceWeeklyEquivalentJP: confirmedWeeklyJP,
+        regulationReference: setting.regulationReference || officialJpInfo.regulation || undefined,
+      };
+
+      if (!state.annualJPReferences) {
+        state.annualJPReferences = [];
+      }
+      const existingRefIdx = state.annualJPReferences.findIndex((e) => e.yearPlanId === activeYearPlan.id);
+      if (existingRefIdx !== -1) {
+        state.annualJPReferences[existingRefIdx].value = annualJPRef;
+      } else {
+        state.annualJPReferences.push({
+          yearPlanId: activeYearPlan.id,
+          value: annualJPRef,
+        });
+      }
+
+      saveStorageV5(state);
       refreshV5();
+      return true;
+    } catch (err: any) {
+      console.error('Failed to save academic setting:', err);
+      return false;
     }
-    return true;
   };
 
   const handleSaveCP = (cp: CPData) => {
