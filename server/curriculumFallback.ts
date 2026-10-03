@@ -59,7 +59,7 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
     rawElements.forEach((elem, idx) => {
       const elemName = elem.name?.trim() || `Elemen ${idx + 1}`;
       const elemContent = elem.content?.trim() || '';
-      const elemId = elem.id || elem.elementId || `elem-${idx + 1}`;
+      const elemId = (elem.id && elem.id.trim()) || (elem.elementId && elem.elementId.trim()) || undefined;
 
       const competence = extractCompetenceFromText(elemContent);
       const scope = extractScopeFromText(elemContent);
@@ -71,7 +71,7 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
         cpText: elemContent,
         cpCompetence: competence,
         materialScope: scope,
-        meaningfulUnderstanding: scope ? `Pemahaman konseptual dan penerapan ${scope}` : '',
+        meaningfulUnderstanding: '',
         suggestedTp,
       });
     });
@@ -81,12 +81,12 @@ export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
     const suggestedTp = competence && scope ? `Peserta didik mampu ${competence.toLowerCase()} ${scope}.` : '';
 
     items.push({
-      elementId: 'elem-general',
+      elementId: undefined,
       elementName: 'Capaian Umum',
       cpText: cpGeneralText,
       cpCompetence: competence,
       materialScope: scope,
-      meaningfulUnderstanding: scope ? `Pemahaman konseptual ${scope}` : '',
+      meaningfulUnderstanding: '',
       suggestedTp,
     });
   }
