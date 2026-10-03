@@ -1724,7 +1724,7 @@ export const LearningPlanManager: React.FC<LearningPlanManagerProps> = ({
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-800 text-base">Pilih Scope / Unit Pembelajaran Modul Ajar</h3>
+                <h3 className="font-bold text-slate-800 text-base">Pilih Lingkup Pembelajaran Modul Ajar</h3>
               </div>
               <button
                 onClick={() => setIsScopeModalOpen(false)}
@@ -1738,51 +1738,79 @@ export const LearningPlanManager: React.FC<LearningPlanManagerProps> = ({
             <div className="p-6 overflow-y-auto space-y-3">
               <p className="text-sm text-slate-600 mb-2">
                 Satu Modul Pembelajaran AI harus mempunyai scope pedagogis yang spesifik. Ditemukan{' '}
-                <span className="font-semibold text-slate-800">{availableScopes.length} unit pembelajaran</span>.{' '}
-                Pilih unit yang akan disusun drafnya:
+                <span className="font-semibold text-slate-800">{availableScopes.length} lingkup pembelajaran</span>.{' '}
+                Pilih lingkup pembelajaran yang akan disusun drafnya:
               </p>
 
               <div className="space-y-2.5">
-                {availableScopes.map((scope) => (
-                  <div
-                    key={scope.id}
-                    className="p-4 rounded-xl border border-slate-200 hover:border-blue-400 bg-white hover:bg-blue-50/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs group"
-                  >
-                    <div className="space-y-1 pr-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {scope.stepNumber && (
-                          <span className="px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-700 rounded-md">
-                            Langkah {scope.stepNumber}
-                          </span>
-                        )}
-                        {scope.tpCode ? (
-                          <span className="px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700 rounded-md">
-                            {scope.tpCode}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 rounded-md italic">
-                            Tanpa kode
-                          </span>
-                        )}
-                        {scope.jp && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md">
-                            {scope.jp} JP
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm">{scope.title}</h4>
-                      <p className="text-xs text-slate-600 line-clamp-2">{scope.tpItem.statement}</p>
-                    </div>
+                {availableScopes.map((scope) => {
+                  const isAtpScope = scope.type === 'ATP_STEP';
+                  const hasUnitTitle = Boolean(scope.unitTitle && scope.unitTitle.trim());
 
-                    <button
-                      onClick={() => executeAIGenerationForScope(scope)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 flex-shrink-0 shadow-2xs group-hover:scale-102 cursor-pointer"
+                  return (
+                    <div
+                      key={scope.id}
+                      className="p-4 rounded-xl border border-slate-200 hover:border-blue-400 bg-white hover:bg-blue-50/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs group"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Susun Draf Ini</span>
-                    </button>
-                  </div>
-                ))}
+                      {isAtpScope ? (
+                        <div className="space-y-1 pr-2">
+                          {hasUnitTitle && (
+                            <h4 className="font-bold text-slate-900 text-sm">
+                              {scope.unitTitle}
+                            </h4>
+                          )}
+                          <div className={hasUnitTitle ? "text-xs font-semibold text-slate-700" : "font-bold text-slate-900 text-sm"}>
+                            {scope.materialScope || scope.tpItem.contentScope || scope.title}
+                          </div>
+                          <div className="text-xs text-slate-500 font-medium">
+                            {[
+                              scope.tpCode || scope.tpItem.code,
+                              scope.stepNumber ? `ATP Langkah ${scope.stepNumber}` : undefined,
+                              typeof scope.jp === 'number' && scope.jp > 0 ? `${scope.jp} JP` : undefined,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                          <p className="text-xs text-slate-600 line-clamp-2">{scope.tpItem.statement}</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 pr-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {scope.stepNumber && (
+                              <span className="px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-700 rounded-md">
+                                Langkah {scope.stepNumber}
+                              </span>
+                            )}
+                            {scope.tpCode ? (
+                              <span className="px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700 rounded-md">
+                                {scope.tpCode}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 rounded-md italic">
+                                Tanpa kode
+                              </span>
+                            )}
+                            {scope.jp && (
+                              <span className="px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md">
+                                {scope.jp} JP
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-slate-800 text-sm">{scope.title}</h4>
+                          <p className="text-xs text-slate-600 line-clamp-2">{scope.tpItem.statement}</p>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => executeAIGenerationForScope(scope)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 flex-shrink-0 shadow-2xs group-hover:scale-102 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Susun Draf Ini</span>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
