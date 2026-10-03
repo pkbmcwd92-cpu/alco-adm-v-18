@@ -842,44 +842,57 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       if (!text) return false;
       const clean = text.toLowerCase().trim();
       
+      // 1. Check strong semantic anchor phrases
       if (
         clean.includes('tanggung jawab') ||
         clean.includes('evaluasi diri') ||
         clean.includes('profil lulusan') ||
         clean.includes('profil pelajar pancasila') ||
-        clean.includes('pengembangan karakter')
+        clean.includes('pengembangan karakter') ||
+        clean.includes('gotong royong')
       ) {
         return true;
       }
       
-      const substantiveKeywords = [
-        'karakter', 'refleksi', 'kolaborasi', 'sikap', 'nilai', 'perilaku', 'akhlak', 'sosial', 'moral', 'spiritual', 'emosional'
+      // 2. Strong standalone keywords (guaranteed to be cross-cutting)
+      const strongKeywords = [
+        'karakter', 'refleksi', 'kolaborasi', 'sikap', 'akhlak'
       ];
       
       const words = clean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-      return words.some(w => substantiveKeywords.includes(w));
+      if (words.some(w => strongKeywords.includes(w))) {
+        return true;
+      }
+
+      // 3. Guard ambiguous tokens: they must have supporting cross-cutting vocabulary to match
+      const ambiguousTokens = new Set(['nilai', 'sosial', 'moral', 'spiritual', 'emosional', 'kebinekaan']);
+      const supportTokens = new Set([
+        'nilai', 'sosial', 'moral', 'spiritual', 'emosional', 'kebinekaan', 
+        'mandiri', 'kreatif', 'kritis', 'profil', 'diri', 'karakter', 'sikap', 'akhlak',
+        'global', 'pancasila', 'lulusan', 'kolaborasi', 'refleksi', 'tanggung', 'jawab'
+      ]);
+
+      let hasAmbiguous = false;
+      let supportCount = 0;
+      
+      words.forEach(w => {
+        if (ambiguousTokens.has(w)) {
+          hasAmbiguous = true;
+        }
+        if (supportTokens.has(w)) {
+          supportCount++;
+        }
+      });
+
+      if (hasAmbiguous && supportCount >= 2) {
+        return true;
+      }
+      
+      return false;
     };
 
     const checkStatementCrossCutting = (statement: string): boolean => {
-      if (!statement) return false;
-      const clean = statement.toLowerCase().trim();
-      
-      if (
-        clean.includes('tanggung jawab') ||
-        clean.includes('evaluasi diri') ||
-        clean.includes('profil lulusan') ||
-        clean.includes('profil pelajar pancasila') ||
-        clean.includes('pengembangan karakter')
-      ) {
-        return true;
-      }
-      
-      const substantiveStatementKeywords = [
-        'karakter', 'refleksi', 'kolaborasi', 'sikap'
-      ];
-      
-      const words = clean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-      return words.some(w => substantiveStatementKeywords.includes(w));
+      return checkSubstantiveCrossCutting(statement);
     };
 
     // 1. contentScope check (primary signal)
