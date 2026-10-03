@@ -490,38 +490,47 @@ app.post('/api/calendar/resolve', async (req, res) => {
   }
 });
 
-// 1. Endpoint: AI Understanding & Breakdown of CP
+// 1. Endpoint: AI Analyze CP -> Return canonical CPAnalysisData items
 app.post('/api/ai/analyze-cp', async (req, res) => {
-  const { cpText, elements, subject, grade, phase, curriculum } = req.body || {};
+  const { cpText, elements = [], subject, grade, phase, curriculum } = req.body || {};
 
   if (!cpText && (!elements || elements.length === 0)) {
-    return res.status(400).json({ error: 'Data CP tidak boleh kosong' });
+    return res.status(400).json({ error: 'Capaian Pembelajaran (CP) atau Elemen CP harus diisi terlebih dahulu' });
   }
 
-  // If GEMINI API key is configured or provided via BYOK header, try Gemini AI first
+  const validElements = Array.isArray(elements) ? elements : [];
+  const validElementIdSet = new Set(validElements.map((e: any) => String(e.id || e.elementId)).filter(Boolean));
+
   const apiKey = resolveApiKey(req);
   if (apiKey) {
     try {
       const ai = createAIClient(apiKey);
-      const prompt = `Anda adalah pakar kurikulum dan konsultan pendidikan profesional di Indonesia.
-Bantu seorang guru memahami, membedah, dan menganalisis Capaian Pembelajaran (CP) berikut:
+      const prompt = `Anda adalah pakar perancangan kurikulum pendidikan nasional Indonesia (Kurikulum Merdeka).
+Tugas Anda adalah menganalisis dan membedah Capaian Pembelajaran (CP) berikut ke dalam butir-butir Analisis CP terstruktur untuk setiap Elemen CP.
 
+PRINSIP BEDAH & ANALISIS CP:
+1. Setiap butir dalam "items" HARUS menautkan ID elemen CP yang dianalisis dalam field "elementId" (persis sesuai ID input yang diberikan). JANGAN PERNAH mengarang ID elemen fiktif.
+2. Identifikasi untuk setiap elemen CP:
+   - "cpCompetence": Kata Kerja Operasional (KKO) / Kompetensi spesifik yang ditargetkan (misal: "Memahami & Mengidentifikasi", "Mempraktikkan & Menyesuaikan").
+   - "materialScope": Lingkup Materi / Konsep Inti esensial yang dipelajari.
+   - "meaningfulUnderstanding": Pemahaman bermakna / variasi keterampilan yang diharapkan.
+   - "suggestedTp": Rekomendasi/usulan rumusan awal Tujuan Pembelajaran yang diturunkan langsung dari elemen CP tersebut.
+3. Satu elemen CP dapat menghasilkan 1 atau beberapa butir analisis jika elemen tersebut secara alami memuat beberapa kompetensi/materi yang berbeda dan kompleks. Jangan memaksakan jumlah angka tertentu.
+4. "generalSummary": Berikan ringkasan 1-2 paragraf mengenai fokus utama dan orientasi pedagogis CP ini.
+
+DATA PEMBELAJARAN:
 - Mata Pelajaran: ${subject || '-'}
-- Jenjang & Kelas: ${grade || '-'} (${phase || '-'})
-- Kurikulum: ${curriculum || '-'}
+- Tingkat / Fase: ${grade || '-'} (${phase || '-'})
+- Kurikulum: ${curriculum || 'Kurikulum Merdeka'}
 - CP Umum: ${cpText || '-'}
-- Elemen CP: ${
-        elements && elements.length > 0
-          ? elements.map((e: { name: string; content: string }) => `[${e.name}]: ${e.content}`).join('\n')
-          : 'Tidak ada rincian elemen terpisah'
-      }
+- Elemen-Elemen CP:
+${
+  validElements.length > 0
+    ? validElements.map((e: any, idx: number) => `${idx + 1}. [ID: ${e.id || e.elementId || `elem-${idx + 1}`}] [Nama: ${e.name || '-'}] Uraian: ${e.content || '-'}`).join('\n')
+    : 'Tidak ada rincian elemen terpisah.'
+}
 
-Berikan output dalam format JSON dengan struktur:
-1. "summary": Ringkasan fokus utama CP dalam 1-2 paragraf bahasa Indonesia yang jelas, bernas, dan aplikatif bagi guru. Gunakan terminologi "Murid" (bukan peserta didik).
-2. "keyCompetencies": Array string berisi daftar kompetensi utama/kata kerja operasional (KKO) yang ditargetkan pada fase ini.
-3. "keyContents": Array string materi/konten inti esensial.
-4. "p3Focus": Array string Dimensi Profil Lulusan yang paling relevan.
-5. "pedagogicalTips": Array string berisi 2-3 tips strategi pembelajaran kontekstual di kelas.`;
+Kembalikan respon JSON sesuai schema:`;
 
       const response = await generateContentWithRetry(ai, {
         contents: prompt,
@@ -530,29 +539,69 @@ Berikan output dalam format JSON dengan struktur:
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              summary: { type: Type.STRING },
-              keyCompetencies: { type: Type.ARRAY, items: { type: Type.STRING } },
-              keyContents: { type: Type.ARRAY, items: { type: Type.STRING } },
-              p3Focus: { type: Type.ARRAY, items: { type: Type.STRING } },
-              pedagogicalTips: { type: Type.ARRAY, items: { type: Type.STRING } },
+              generalSummary: { type: Type.STRING },
+              items: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    elementId: { type: Type.STRING, description: 'ID elemen CP rujukan (persis dari input)' },
+                    elementName: { type: Type.STRING, description: 'Nama elemen CP rujukan' },
+                    cpText: { type: Type.STRING, description: 'Kutipan/teks ringkas CP elemen yang dianalisis' },
+                    cpCompetence: { type: Type.STRING, description: 'Kompetensi / KKO utama' },
+                    materialScope: { type: Type.STRING, description: 'Lingkup Materi Inti' },
+                    meaningfulUnderstanding: { type: Type.STRING, description: 'Pemahaman bermakna / variasi' },
+                    suggestedTp: { type: Type.STRING, description: 'Rekomendasi rumusan awal TP' },
+                  },
+                  required: ['elementName', 'cpCompetence', 'materialScope', 'suggestedTp'],
+                },
+              },
             },
-            required: ['summary', 'keyCompetencies', 'keyContents', 'p3Focus', 'pedagogicalTips'],
+            required: ['generalSummary', 'items'],
           },
         },
       });
 
       const parsed = cleanAndParseJSON(response.text, null);
-      if (parsed && parsed.summary) {
-        return res.json({ success: true, data: parsed, engine: 'gemini' });
+      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        // Sanitize elementId linkage
+        const sanitizedItems = parsed.items.map((item: any, idx: number) => {
+          let elemId = item.elementId && validElementIdSet.has(String(item.elementId)) ? String(item.elementId) : undefined;
+          if (!elemId && validElements.length > 0) {
+            // Match by element name or index
+            const matchedElem = validElements.find((e: any) => e.name && item.elementName && e.name.toLowerCase() === item.elementName.toLowerCase()) || validElements[idx];
+            if (matchedElem) {
+              elemId = matchedElem.id || matchedElem.elementId;
+            }
+          }
+          return {
+            elementId: elemId,
+            elementName: item.elementName || (validElements[idx]?.name) || `Elemen ${idx + 1}`,
+            cpText: item.cpText || (validElements.find((e: any) => e.id === elemId)?.content) || '',
+            cpCompetence: item.cpCompetence || '',
+            materialScope: item.materialScope || '',
+            meaningfulUnderstanding: item.meaningfulUnderstanding || '',
+            suggestedTp: item.suggestedTp || '',
+          };
+        });
+
+        return res.json({
+          success: true,
+          data: {
+            generalSummary: parsed.generalSummary || cpText || '',
+            items: sanitizedItems,
+          },
+          engine: 'gemini',
+        });
       }
     } catch (error: unknown) {
-      console.warn('Gemini analysis failed or unconfigured, using pedagogical fallback engine:', error);
+      console.warn('Gemini analyze CP failed, using fallback engine:', error);
     }
   }
 
-  // Pedagogical Rule Engine fallback
-  const fallback = fallbackAnalyzeCP({ cpText, elements, subject, grade, phase, curriculum });
-  res.json({ success: true, data: fallback, engine: 'pedagogical_engine' });
+  // Fallback: Pedagogical Rule Engine
+  const fallback = fallbackAnalyzeCP({ cpText, elements: validElements, subject, grade, phase, curriculum });
+  return res.json({ success: true, data: fallback, engine: 'pedagogical_engine' });
 });
 
 // Runtime validator for AI TP response

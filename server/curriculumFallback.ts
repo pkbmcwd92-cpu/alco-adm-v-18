@@ -5,7 +5,7 @@
 
 export interface FallbackAnalyzeCPParams {
   cpText?: string;
-  elements?: { name: string; content: string }[];
+  elements?: Array<{ id?: string; elementId?: string; name: string; content: string }>;
   subject?: string;
   grade?: string;
   phase?: string;
@@ -14,57 +14,88 @@ export interface FallbackAnalyzeCPParams {
 
 export function fallbackAnalyzeCP(params: FallbackAnalyzeCPParams) {
   const subject = params.subject || 'Mata Pelajaran';
-  const grade = params.grade || 'Kelas 4';
-  const phase = params.phase || 'Fase B';
-  const rawText = (params.cpText || '') + ' ' + (params.elements?.map((e) => `${e.name}: ${e.content}`).join(' ') || '');
+  const grade = params.grade || '';
+  const phase = params.phase || '';
+  const cpGeneralText = (params.cpText || '').trim();
+  const rawElements = Array.isArray(params.elements) ? params.elements : [];
 
-  // Extract action verbs and competencies
-  const commonKKO = [
-    'Memahami',
-    'Mengidentifikasi',
-    'Menganalisis',
-    'Menerapkan',
-    'Mengevaluasi',
-    'Merancang',
-    'Mempraktikkan',
-    'Menyajikan',
-    'Mengomunikasikan',
-    'Menciptakan',
-    'Menjelaskan',
-    'Membandingkan',
+  const commonKKOList = [
+    'Menganalisis', 'Memahami', 'Mengidentifikasi', 'Menerapkan', 'Mengevaluasi',
+    'Merancang', 'Mempraktikkan', 'Menyajikan', 'Mengomunikasikan', 'Menciptakan',
+    'Menjelaskan', 'Membandingkan', 'Mendeskripsikan', 'Menyusun'
   ];
 
-  const matchedCompetencies = commonKKO.filter((kko) =>
-    new RegExp(`\\b${kko}\\b`, 'i').test(rawText)
-  );
+  const extractCompetenceFromText = (text: string): string => {
+    if (!text) return '';
+    const matched = commonKKOList.filter((kko) => new RegExp(`\\b${kko}\\b`, 'i').test(text));
+    if (matched.length > 0) {
+      return matched.join(' & ');
+    }
+    return ''; // Leave empty if uncertain!
+  };
 
-  const finalCompetencies =
-    matchedCompetencies.length >= 2
-      ? matchedCompetencies.slice(0, 5)
-      : ['Memahami konsep dasar', 'Menganalisis dan mengeksplorasi', 'Menerapkan dalam pemecahan masalah', 'Mengomunikasikan hasil pemikiran'];
+  const extractScopeFromText = (text: string): string => {
+    if (!text) return '';
+    const clean = text
+      .replace(/^(pada akhir fase|peserta didik mampu|murid mampu|pada fase ini|peserta didik dapat)\s+/i, '')
+      .trim();
+    if (clean.length > 0) {
+      return clean.length > 120 ? `${clean.substring(0, 117)}...` : clean;
+    }
+    return ''; // Leave empty if uncertain!
+  };
 
-  // Extract content topics
-  const contentTokens = rawText
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 4 && !['peserta', 'didik', 'mampu', 'dapat', 'pada', 'fase', 'akhir', 'dalam', 'dengan', 'untuk'].includes(w.toLowerCase()));
+  const items: Array<{
+    elementId?: string;
+    elementName: string;
+    cpText: string;
+    cpCompetence: string;
+    materialScope: string;
+    meaningfulUnderstanding: string;
+    suggestedTp: string;
+  }> = [];
 
-  const uniqueTokens = Array.from(new Set(contentTokens)).slice(0, 6);
-  const keyContents =
-    uniqueTokens.length >= 2
-      ? uniqueTokens.map((t) => `Konsep dan penerapan ${t}`)
-      : [`Konsep esensial ${subject}`, `Keterampilan proses dan penalaran pada ${phase}`, `Aplikasi kontekstual dalam kehidupan sehari-hari`];
+  if (rawElements.length > 0) {
+    rawElements.forEach((elem, idx) => {
+      const elemName = elem.name?.trim() || `Elemen ${idx + 1}`;
+      const elemContent = elem.content?.trim() || '';
+      const elemId = elem.id || elem.elementId || `elem-${idx + 1}`;
+
+      const competence = extractCompetenceFromText(elemContent);
+      const scope = extractScopeFromText(elemContent);
+      const suggestedTp = competence && scope ? `Peserta didik mampu ${competence.toLowerCase()} ${scope}.` : '';
+
+      items.push({
+        elementId: elemId,
+        elementName: elemName,
+        cpText: elemContent,
+        cpCompetence: competence,
+        materialScope: scope,
+        meaningfulUnderstanding: scope ? `Pemahaman konseptual dan penerapan ${scope}` : '',
+        suggestedTp,
+      });
+    });
+  } else if (cpGeneralText) {
+    const competence = extractCompetenceFromText(cpGeneralText);
+    const scope = extractScopeFromText(cpGeneralText);
+    const suggestedTp = competence && scope ? `Peserta didik mampu ${competence.toLowerCase()} ${scope}.` : '';
+
+    items.push({
+      elementId: 'elem-general',
+      elementName: 'Capaian Umum',
+      cpText: cpGeneralText,
+      cpCompetence: competence,
+      materialScope: scope,
+      meaningfulUnderstanding: scope ? `Pemahaman konseptual ${scope}` : '',
+      suggestedTp,
+    });
+  }
+
+  const generalSummary = cpGeneralText || (items.length > 0 ? items.map((i) => `${i.elementName}: ${i.cpText}`).join('; ') : `Analisis Capaian Pembelajaran ${subject} ${grade} (${phase}).`);
 
   return {
-    summary: `Capaian Pembelajaran (CP) untuk ${subject} pada ${grade} (${phase}) menitikberatkan pada penguasaan kompetensi mendasar dan pemahaman konseptual yang bermakna. Peserta didik dibimbing untuk mengintegrasikan pemahaman teori dengan keterampilan praktis serta penalaran kritis sesuai karakteristik perkembangan peserta didik pada fase ini.`,
-    keyCompetencies: finalCompetencies,
-    keyContents: keyContents,
-    p3Focus: ['Bernalar Kritis', 'Mandiri', 'Kreatif', 'Gotong Royong'],
-    pedagogicalTips: [
-      `Gunakan pendekatan pembelajaran kontekstual berbasis masalah (Problem-Based Learning) yang dekat dengan lingkungan peserta didik ${grade}.`,
-      `Lakukan asesmen diagnostik di awal pembelajaran untuk memetakan kesiapan dan minat belajar peserta didik.`,
-      `Integrasikan aktivitas kolaboratif berpasangan atau kelompok kecil untuk mengasah dimensi Gotong Royong dan Komunikasi.`,
-    ],
+    generalSummary,
+    items,
   };
 }
 

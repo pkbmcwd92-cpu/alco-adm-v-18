@@ -938,7 +938,7 @@ export const AssessmentPackageBuilder: React.FC<AssessmentPackageBuilderProps> =
             </button>
           </div>
         </div>
-      ) : uiState === 'GENERATING' ? (
+      ) : isGenerating ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center max-w-xl mx-auto space-y-4 shadow-sm">
           <RefreshCw className="w-10 h-10 text-blue-600 animate-spin mx-auto" />
           <h4 className="text-lg font-bold text-slate-800">Menyusun Perangkat Asesmen...</h4>

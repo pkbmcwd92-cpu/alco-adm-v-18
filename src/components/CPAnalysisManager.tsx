@@ -26,6 +26,8 @@ import {
   normalizeCPVerificationStatus,
 } from '../types';
 import { validateCPAnalysisDataWorkflow } from '../services/cpWorkflowService';
+import { analyzeCPWithAI } from '../services/aiService';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 
 interface CPAnalysisManagerProps {
   cp: CPData;
@@ -77,6 +79,8 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
     cpAnalysis?.generalSummary || ''
   );
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   useEffect(() => {
     if (cpAnalysis?.items && cpAnalysis.items.length > 0) {
@@ -166,6 +170,80 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
     onSaveCPAnalysis(updated);
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 2500);
+  };
+
+  const handleRunAIAnalysis = async () => {
+    if (!cp.generalDescription && (!cp.elements || cp.elements.length === 0)) {
+      alert('Capaian Pembelajaran (CP) rujukan belum diisi pada Langkah 03.');
+      return;
+    }
+
+    if (items.length > 0 && !confirm('Analisis CP sudah ada. Jalankan analisis AI baru untuk memperbarui?')) {
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const res = await analyzeCPWithAI({
+        cpText: cp.generalDescription || '',
+        elements: cp.elements || [],
+        subject: context.subject,
+        grade: context.grade,
+        phase: context.phase,
+        curriculum: context.curriculum,
+      });
+
+      const newItems: CPAnalysisItem[] = (res.items || []).map((it, idx) => ({
+        id: `ana-item-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 6)}`,
+        elementId: it.elementId || (cp.elements && cp.elements[idx]?.id),
+        elementName: it.elementName || (cp.elements && cp.elements[idx]?.name) || `Elemen ${idx + 1}`,
+        cpText: it.cpText || (cp.elements && cp.elements[idx]?.content) || '',
+        cpCompetence: it.cpCompetence || '',
+        materialScope: it.materialScope || '',
+        meaningfulUnderstanding: it.meaningfulUnderstanding || '',
+        suggestedTp: it.suggestedTp || '',
+        order: idx + 1,
+      }));
+
+      const nextSummary = res.generalSummary || generalSummary || '';
+      setItems(newItems);
+      setGeneralSummary(nextSummary);
+
+      const candidateData: CPAnalysisData = {
+        id: cpAnalysis?.id || `cpanalysis-${academicSetting.id}`,
+        academicSettingId: academicSetting.id,
+        cpId: cp.id,
+        cpSourceId: cp.source?.id || cp.source?.title,
+        cpRegulationIds: cp.source?.regulationIds || cp.regulationIds || [],
+        cpVersion: cp.cpVersion ?? cp.source?.versionCode,
+        academicYear: context.academicYear,
+        subjectCode: context.subject,
+        phase: context.phase,
+        generalSummary: nextSummary,
+        items: newItems,
+        generatedBy: 'AI',
+        generatedAt: new Date().toISOString(),
+        basedOnCpUpdatedAt: cp.updatedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const val = validateCPAnalysisDataWorkflow(candidateData, cp);
+      const updated: CPAnalysisData = {
+        ...candidateData,
+        workflowStatus: val.isSiap ? 'SIAP' : 'PERLU_DILENGKAPI',
+      };
+
+      onSaveCPAnalysis(updated);
+      setShowSavedToast(true);
+      setTimeout(() => setShowSavedToast(false), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Gagal menganalisis CP dengan AI';
+      setAnalysisError(msg);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleGenerateFromCP = () => {

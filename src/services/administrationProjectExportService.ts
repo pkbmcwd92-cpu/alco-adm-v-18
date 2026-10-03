@@ -27,6 +27,7 @@ import type {
 import { ADMINISTRATION_PROJECT_PACKAGE_SCHEMA_VERSION_V1 } from '../types/administrationProjectTransfer';
 import {
   createInitialStorageV5,
+  loadStorageV5,
   STORAGE_KEY_V5,
   validateStorageStateV5,
 } from './storageV5';
@@ -96,11 +97,16 @@ export function exportAdministrationProject(
   yearPlanId: string,
   options?: AdministrationProjectExportOptions
 ): AdministrationProjectExportResult {
-  const storageRead = readStorageV5Snapshot();
-  if (!storageRead.success) {
-    return storageRead;
+  try {
+    const state = loadStorageV5();
+    return exportAdministrationProjectFromState(state, yearPlanId, options);
+  } catch (err: any) {
+    return {
+      success: false,
+      errorCode: 'STORAGE_READ_FAILED',
+      message: err?.message || 'Gagal membaca data penyimpanan storage V5.',
+    };
   }
-  return exportAdministrationProjectFromState(storageRead.state, yearPlanId, options);
 }
 
 export function exportAdministrationProjectFromState(

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { CPData, CPElem, AcademicSetting, TeacherProfile, ActiveContext, CPSource, CPVerificationStatus, normalizeCPVerificationStatus } from '../types';
 import { cpSourceRepository, CPSourceSearchResult } from '../services/cpSourceRepository';
-import { analyzeCPWithAI, CPAnalysisResult } from '../services/aiService';
+// CPManager imports
 
 interface CPManagerProps {
   cp: CPData;
@@ -51,10 +51,6 @@ export const CPManager: React.FC<CPManagerProps> = ({
   const [searchResults, setSearchResults] = useState<CPSourceSearchResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<CPSourceSearchResult | null>(null);
 
-  // AI Analysis State
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<CPAnalysisResult | null>(null);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState(false);
 
   // Sync if prop changes
@@ -128,7 +124,7 @@ export const CPManager: React.FC<CPManagerProps> = ({
         retrievedAt: new Date().toISOString(),
         verificationStatus: 'local_reference',
       },
-      aiNotes: aiNotes || (analysisResult ? analysisResult.summary : ''),
+      aiNotes: aiNotes || '',
       lastEditedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -144,34 +140,6 @@ export const CPManager: React.FC<CPManagerProps> = ({
     }
     handleSave();
     onNextStep();
-  };
-
-  const handleRunAIAnalysis = async () => {
-    if (!generalDescription.trim() && elements.length === 0) {
-      alert('Pilih sumber atau isi CP terlebih dahulu agar AI dapat membedah kompetensinya.');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setAnalysisError(null);
-
-    try {
-      const res = await analyzeCPWithAI({
-        cpText: generalDescription,
-        elements,
-        subject: context.subject,
-        grade: context.grade,
-        phase: context.phase,
-        curriculum: context.curriculum,
-      });
-      setAnalysisResult(res);
-      setAiNotes(res.summary);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal menganalisis CP dengan AI';
-      setAnalysisError(msg);
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   const hasCP = (generalDescription && generalDescription.trim().length > 0) || elements.length > 0;
@@ -259,223 +227,96 @@ export const CPManager: React.FC<CPManagerProps> = ({
         </div>
       </div>
 
-      {/* Main Grid: CP Editor Form (7 cols) & AI Analysis (5 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: CP Editor Form */}
-        <div className="lg:col-span-7 space-y-5">
-          {/* General CP Textarea */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-blue-600" />
-                <span>Deskripsi Umum Capaian Pembelajaran ({context.phase})</span>
-              </label>
-              <span className="text-[11px] text-slate-400">Teks naratif fase</span>
-            </div>
-
-            <textarea
-              id="textarea-cp-general"
-              rows={4}
-              placeholder="Contoh: Pada akhir Fase B, peserta didik memiliki kemampuan berbahasa untuk berkomunikasi dan bernalar, sesuai dengan tujuan, konteks sosial, akademis..."
-              value={generalDescription}
-              onChange={(e) => setGeneralDescription(e.target.value)}
-              className="w-full text-sm p-3.5 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 leading-relaxed"
-            />
+      {/* CP Editor Form */}
+      <div className="space-y-5">
+        {/* General CP Textarea */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span>Deskripsi Umum Capaian Pembelajaran ({context.phase})</span>
+            </label>
+            <span className="text-[11px] text-slate-400">Teks naratif fase</span>
           </div>
 
-          {/* CP Elements Section */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Rincian Elemen CP ({elements.length})
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  Elemen mata pelajaran (misal: Menyimak, Membaca, Menulis, Keterampilan Gerak, dll)
-                </p>
-              </div>
-
-              <button
-                id="btn-add-cp-element"
-                type="button"
-                onClick={handleAddElement}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Elemen</span>
-              </button>
-            </div>
-
-            {elements.length === 0 ? (
-              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-2">
-                <p className="text-xs text-slate-500">
-                  Belum ada elemen CP terpisah. Anda dapat menambahkan elemen atau mengandalkan deskripsi CP umum di atas.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleOpenSourceSearch}
-                  className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span>Ambil elemen otomatis dari sumber resmi</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {elements.map((elem, idx) => (
-                  <div key={elem.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <input
-                        type="text"
-                        placeholder="Nama Elemen (misal: Menyimak / Keterampilan Gerak)"
-                        value={elem.name}
-                        onChange={(e) => handleElementChange(elem.id, 'name', e.target.value)}
-                        className="text-xs font-bold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveElement(elem.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
-                        title="Hapus elemen ini"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <textarea
-                      rows={2}
-                      placeholder="Uraian capaian pada elemen ini..."
-                      value={elem.content}
-                      onChange={(e) => handleElementChange(elem.id, 'content', e.target.value)}
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 leading-relaxed"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <textarea
+            id="textarea-cp-general"
+            rows={4}
+            placeholder="Contoh: Pada akhir Fase B, peserta didik memiliki kemampuan berbahasa untuk berkomunikasi dan bernalar, sesuai dengan tujuan, konteks sosial, akademis..."
+            value={generalDescription}
+            onChange={(e) => setGeneralDescription(e.target.value)}
+            className="w-full text-sm p-3.5 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600 leading-relaxed"
+          />
         </div>
 
-        {/* Right: AI Analysis & Pedagogical Insight Assistant */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-gradient-to-b from-blue-900 to-indigo-950 text-white rounded-2xl p-5 shadow-md space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
-                  <BrainCircuit className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-white">AI Bedah & Pahami CP</h4>
-                  <p className="text-[11px] text-blue-200">Analisis kata kerja, materi esensial, & profil pelajar</p>
-                </div>
-              </div>
+        {/* CP Elements Section */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Rincian Elemen CP ({elements.length})
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Elemen mata pelajaran (misal: Menyimak, Membaca, Menulis, Keterampilan Gerak, dll)
+              </p>
             </div>
 
-            <p className="text-xs text-blue-100/90 leading-relaxed">
-              AI akan menganalisis teks CP Anda untuk mengekstraksi kompetensi kunci (KKO), konten esensial, dan Dimensi Profil Lulusan yang harus tercapai.
-            </p>
-
             <button
-              id="btn-run-ai-cp-analysis"
-              onClick={handleRunAIAnalysis}
-              disabled={isAnalyzing || !hasCP}
-              className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer disabled:opacity-50"
+              id="btn-add-cp-element"
+              type="button"
+              onClick={handleAddElement}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
             >
-              {isAnalyzing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Sedang Membedah CP dengan AI...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Analisis & Bedah CP dengan AI</span>
-                </>
-              )}
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Elemen</span>
             </button>
-
-            {analysisError && (
-              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs">
-                ⚠️ {analysisError}
-              </div>
-            )}
           </div>
 
-          {/* AI Analysis Result Display */}
-          {analysisResult && (
-            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4 text-xs">
-              <div className="border-b border-slate-100 pb-2">
-                <h5 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-blue-600" />
-                  <span>Hasil Analisis CP</span>
-                </h5>
-                <p className="text-slate-600 mt-1 leading-relaxed">{analysisResult.summary}</p>
-              </div>
-
-              {/* Key competencies */}
-              <div>
-                <span className="font-bold text-slate-800 uppercase text-[10px] block mb-1.5">
-                  Kompetensi Utama / KKO:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {analysisResult.keyCompetencies.map((k, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-semibold border border-blue-200/80"
+          {elements.length === 0 ? (
+            <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-2">
+              <p className="text-xs text-slate-500">
+                Belum ada elemen CP terpisah. Anda dapat menambahkan elemen atau mengandalkan deskripsi CP umum di atas.
+              </p>
+              <button
+                type="button"
+                onClick={handleOpenSourceSearch}
+                className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Ambil elemen otomatis dari sumber resmi</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {elements.map((elem, idx) => (
+                <div key={elem.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nama Elemen (misal: Menyimak / Keterampilan Gerak)"
+                      value={elem.name}
+                      onChange={(e) => handleElementChange(elem.id, 'name', e.target.value)}
+                      className="text-xs font-bold text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveElement(elem.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
+                      title="Hapus elemen ini"
                     >
-                      {k}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
 
-              {/* Key contents */}
-              <div>
-                <span className="font-bold text-slate-800 uppercase text-[10px] block mb-1.5">
-                  Konten / Materi Esensial:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {analysisResult.keyContents.map((c, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-semibold border border-amber-200"
-                    >
-                      {c}
-                    </span>
-                  ))}
+                  <textarea
+                    rows={2}
+                    placeholder="Uraian capaian pada elemen ini..."
+                    value={elem.content}
+                    onChange={(e) => handleElementChange(elem.id, 'content', e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 leading-relaxed"
+                  />
                 </div>
-              </div>
-
-              {/* P3 focus */}
-              <div>
-                <span className="font-bold text-slate-800 uppercase text-[10px] block mb-1.5">
-                  Dimensi Profil Lulusan:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {analysisResult.p3Focus.map((p, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pedagogical tips */}
-              {analysisResult.pedagogicalTips && analysisResult.pedagogicalTips.length > 0 && (
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60 space-y-1">
-                  <span className="font-bold text-slate-800 uppercase text-[10px] block">
-                    Tips Strategi Pembelajaran:
-                  </span>
-                  <ul className="list-disc list-inside space-y-0.5 text-slate-600 text-[11px]">
-                    {analysisResult.pedagogicalTips.map((tip, i) => (
-                      <li key={i}>{tip}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              ))}
             </div>
           )}
         </div>

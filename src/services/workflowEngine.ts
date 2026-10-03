@@ -26,6 +26,8 @@ import { resolveCurriculumContext, resolveSubjectInput } from '../data/curriculu
 import { ResolvedCurriculumContext } from '../data/curriculum/types';
 import { getPhaseFromGrade } from '../data/curriculumDefaults';
 import { validateKKTPData, resolveCriterionTPReference } from './cpWorkflowService';
+import { loadStorageV5 } from './storageV5';
+import { resolveSemesterCapacityV5 } from './jpEngine';
 
 export type WorkflowStatus = 'BLOCKED' | 'READY' | 'IN_PROGRESS' | 'COMPLETE' | 'STALE';
 

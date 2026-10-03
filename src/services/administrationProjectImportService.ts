@@ -33,6 +33,7 @@ import type {
 } from '../types/administrationProjectTransfer';
 import {
   createInitialStorageV5,
+  loadStorageV5,
   saveStorageV5,
   STORAGE_KEY_V5,
   validateStorageStateV5,
@@ -116,10 +117,16 @@ export function importAdministrationProject(
     };
   }
 
-  const storageRead = readStorageV5Snapshot();
-  if (!storageRead.success) return storageRead;
-
-  return importAdministrationProjectIntoState(storageRead.state, params);
+  try {
+    const currentState = loadStorageV5();
+    return importAdministrationProjectIntoState(currentState, params);
+  } catch (err: any) {
+    return {
+      success: false,
+      errorCode: 'STORAGE_READ_FAILED',
+      message: err?.message || 'Gagal membaca data penyimpanan storage V5.',
+    };
+  }
 }
 
 export function importAdministrationProjectIntoState(

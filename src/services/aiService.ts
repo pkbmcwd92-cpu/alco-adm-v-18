@@ -17,12 +17,17 @@ import {
   normalizeAIResources,
 } from './learningPlanService';
 
-export interface CPAnalysisResult {
-  summary: string;
-  keyCompetencies: string[];
-  keyContents: string[];
-  p3Focus: string[];
-  pedagogicalTips: string[];
+export interface CanonicalCPAnalysisResult {
+  generalSummary: string;
+  items: Array<{
+    elementId?: string;
+    elementName: string;
+    cpText?: string;
+    cpCompetence: string;
+    materialScope: string;
+    meaningfulUnderstanding?: string;
+    suggestedTp?: string;
+  }>;
 }
 
 export interface GenerateTPParams {
@@ -228,7 +233,7 @@ export async function analyzeCPWithAI(params: {
   grade: string;
   phase: string;
   curriculum: string;
-}): Promise<CPAnalysisResult> {
+}): Promise<CanonicalCPAnalysisResult> {
   try {
     const res = await aiFetch('/api/ai/analyze-cp', {
       method: 'POST',
