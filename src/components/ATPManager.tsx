@@ -114,6 +114,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
           tpId: (item as any).tpId || '',
           tpCode: item.tpCode || '',
           tpStatement: item.tpStatement || '',
+          unitTitle: (item as any).unitTitle || undefined,
           materialScope: item.materialScope || '',
           jp: item.jp !== undefined && item.jp !== null && Number(item.jp) > 0 ? Number(item.jp) : undefined,
           p3Dimensions: Array.isArray(item.p3Dimensions) ? item.p3Dimensions : [],
@@ -290,6 +291,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
       tpId: '',
       tpCode: '',
       tpStatement: '',
+      unitTitle: '',
       materialScope: '',
       jp: undefined,
       p3Dimensions: [],
@@ -507,6 +509,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
                   <th className="p-3 w-12 text-center">No.</th>
                   <th className="p-3 w-28">Kode & Status</th>
                   <th className="p-3 min-w-[240px]">Tujuan Pembelajaran (TP Canonical)</th>
+                  <th className="p-3 min-w-[140px]">Unit / Bab</th>
                   <th className="p-3 min-w-[140px]">Lingkup Materi</th>
                   <th className="p-3 min-w-[120px]">Profil Pancasila</th>
                   <th className="p-3 min-w-[150px]">Rencana Asesmen</th>
@@ -556,6 +559,15 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
                           <div className="text-[11px] text-slate-500 mt-1">
                             <span className="font-semibold text-slate-700">Glosarium:</span> {item.glossary}
                           </div>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-800">
+                        {item.unitTitle ? (
+                          <div className="font-medium text-indigo-900 bg-indigo-50/70 border border-indigo-100 rounded-md px-2 py-1 text-xs">
+                            {item.unitTitle}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs italic">-</span>
                         )}
                       </td>
                       <td className="p-3 text-slate-700 font-semibold">{item.materialScope || '-'}</td>
@@ -623,7 +635,7 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
             </tbody>
               <tfoot>
                 <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                  <td colSpan={6} className="p-3 text-right">
+                  <td colSpan={7} className="p-3 text-right">
                     Total Alokasi Waktu:
                   </td>
                   <td className="p-3 text-center bg-blue-50 text-blue-900 font-extrabold">
@@ -787,6 +799,21 @@ export const ATPManager: React.FC<ATPManagerProps> = ({
                     className="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Unit / Bab
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Bab 2 — Gerak Berpindah Tempat (opsional)"
+                  value={currentItem.unitTitle || ''}
+                  onChange={(e) =>
+                    setCurrentItem({ ...currentItem, unitTitle: e.target.value })
+                  }
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

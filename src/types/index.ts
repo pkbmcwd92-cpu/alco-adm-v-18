@@ -387,6 +387,7 @@ export interface ATPItem {
   tpId?: string; // Canonical reference to TPItem.id
   tpCode?: string; // Resolved display code
   tpStatement?: string; // Resolved display statement
+  unitTitle?: string; // Metadata pengelompokan Unit / Bab / Topik operasional (optional)
   materialScope?: string; // Resolved display material scope
   allocatedJP?: number | null; // Alokasi Jam Pelajaran (explicitly nullable! Unknown = null)
   jp?: number | null; // Compatibility field
