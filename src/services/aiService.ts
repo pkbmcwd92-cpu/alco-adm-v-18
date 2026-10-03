@@ -456,3 +456,66 @@ export async function refineTextWithAI(params: {
     throw new Error(formatAIErrorMessage(err, 'menyempurnakan kalimat'));
   }
 }
+
+export interface TeacherUnitConstraint {
+  unitIndex: number;
+  unitTitle: string;
+}
+
+export interface GenerateATPMappingParams {
+  atpItems: Array<{
+    id: string;
+    stepNumber?: number;
+    tpCode: string;
+    tpStatement?: string;
+    unitTitle?: string;
+    materialScope?: string;
+  }>;
+  subject?: string;
+  grade?: string;
+  phase?: string;
+  targetUnitCount?: number;
+  teacherUnits?: TeacherUnitConstraint[];
+}
+
+export interface ATPMappingResult {
+  units: Array<{
+    unitIndex: number;
+    unitTitle: string;
+    description?: string;
+  }>;
+  mappings: Array<{
+    atpItemId: string;
+    unitTitle: string;
+    materialScope: string;
+  }>;
+}
+
+export async function generateATPMappingWithAI(
+  params: GenerateATPMappingParams
+): Promise<ATPMappingResult> {
+  try {
+    const res = await aiFetch('/api/ai/generate-atp-mapping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.code === 'AI_NOT_CONFIGURED') {
+        throw new Error('Layanan AI belum dikonfigurasi pada server.');
+      }
+      throw new Error(errData.error || `Gagal menyusun pemetaan Unit/Bab dengan AI (Status ${res.status})`);
+    }
+
+    const data = await res.json();
+    if (!data.data || !Array.isArray(data.data.mappings)) {
+      throw new Error('Hasil respon AI Pemetaan Unit tidak memuat data pemetaan yang valid.');
+    }
+    return data.data;
+  } catch (err) {
+    throw new Error(formatAIErrorMessage(err, 'menyusun pemetaan Unit/Bab & Lingkup Materi'));
+  }
+}
+

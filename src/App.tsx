@@ -1372,6 +1372,7 @@ export function App() {
             <ATPUnitMappingManager
               atp={activeATP}
               tp={activeTP}
+              academicSetting={transitionalAcademicSetting}
               onSaveATP={handleSaveATP}
               onNextStep={() => setCurrentStep('annual-planning')}
               onBackToATP={() => setCurrentStep('atp')}

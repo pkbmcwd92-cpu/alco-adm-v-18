@@ -16,6 +16,7 @@ import {
 import {
   fallbackAnalyzeCP,
   fallbackRefineText,
+  fallbackGenerateATPMapping,
 } from './server/curriculumFallback';
 import { validateGraduateProfileDimensions } from './src/constants/graduateProfileDimensions';
 
@@ -866,6 +867,168 @@ Kembalikan output JSON sesuai schema:`;
       code: isAuth ? 'INVALID_API_KEY' : undefined,
     });
   }
+});
+
+// 3b. Endpoint: AI Generate ATP Unit/Bab Mapping
+app.post('/api/ai/generate-atp-mapping', async (req, res) => {
+  const {
+    atpItems,
+    subject,
+    grade,
+    phase,
+    targetUnitCount = 6,
+    teacherUnits = [],
+  } = req.body || {};
+
+  if (!Array.isArray(atpItems) || atpItems.length === 0) {
+    return res.status(400).json({ error: 'Daftar langkah ATP tidak boleh kosong.' });
+  }
+
+  const unitCount = Math.max(1, Math.min(20, Number(targetUnitCount) || 6));
+
+  // Build teacher unit constraints map
+  const teacherUnitMap: Record<number, string> = {};
+  if (Array.isArray(teacherUnits)) {
+    teacherUnits.forEach((u: any) => {
+      if (u && typeof u.unitIndex === 'number' && typeof u.unitTitle === 'string' && u.unitTitle.trim().length > 0) {
+        teacherUnitMap[u.unitIndex] = u.unitTitle.trim();
+      }
+    });
+  }
+
+  // Check AI configuration (GEMINI_API_KEY or BYOK header)
+  const apiKey = resolveApiKey(req);
+  if (apiKey) {
+    try {
+      const ai = createAIClient(apiKey);
+      const prompt = `Anda adalah pakar kurikulum dan pengembang perangkat pembelajaran Kurikulum Merdeka.
+Tugas Anda adalah melakukan pemetaan Unit/Bab (Unit Mapping) dan Lingkup Materi untuk setiap butir langkah Alur Tujuan Pembelajaran (ATP) berikut.
+
+DATA PEMBELAJARAN:
+- Mata Pelajaran: ${subject || '-'}
+- Kelas / Fase: ${grade || '-'} (${phase || '-'})
+- Target Jumlah Bab / Unit Pembelajaran: ${unitCount} Bab
+
+ATURAN DAN BATASAN DARI GURU (WAJIB DIPATUHI SECARA MUTLAK):
+1. Target jumlah Bab adalah ${unitCount} Bab (Bab 1 s.d. Bab ${unitCount}).
+${
+  Object.keys(teacherUnitMap).length > 0
+    ? `2. Nama Bab yang SUDAH DITETAPKAN OLEH GURU (JANGAN DIUBAH SAMA SEKALI, GUNAKAN PERSIS SAMA):\n${Object.entries(
+        teacherUnitMap
+      )
+        .map(([idx, title]) => `   - Bab ${idx}: "${title}"`)
+        .join('\n')}\n3. Untuk Bab yang belum dinamai oleh guru, usulkan judul Bab yang kontekstual, menarik, dan sesuai materi Kurikulum Merdeka.`
+    : `2. Usulkan nama Bab yang menarik, ringkas, dan relevan dengan materi pelajaran untuk Bab 1 s.d. Bab ${unitCount} (misal: "Bab 1: Menjelajah Teks Deskripsi", "Bab 2: Mengungkap Fakta dalam Berita", dsb).`
+}
+4. Setiap langkah ATP harus dipetakan ke salah satu Bab secara kronologis dan berkesinambungan. Urutan langkah ATP (Step 1 s.d. Step ${atpItems.length}) harus berurutan secara logis dalam Bab yang bertahap (Bab 1, Bab 2, dst).
+5. Tentukan Lingkup Materi / Topik Pembelajaran yang spesifik dan bernas untuk tiap langkah ATP.
+${
+  atpItems.some((it: any) => it.unitTitle || it.materialScope)
+    ? `6. Nilai yang sudah diisi oleh guru pada butir ATP tertentu (ditandai dengan [Kustom Guru]) harus dipertahankan dan diutamakan.`
+    : ''
+}
+
+DAFTAR LANGKAH ATP YANG HARUS DIPETAKAN:
+${atpItems
+  .map(
+    (item: any, idx: number) =>
+      `${idx + 1}. [ID: ${item.id}] Langkah #${item.stepNumber || idx + 1} (Kode TP: ${item.tpCode || '-'}): "${
+        item.tpStatement || '-'
+      }" ${item.unitTitle ? `[Kustom Guru Unit: "${item.unitTitle}"]` : ''} ${
+        item.materialScope ? `[Kustom Guru Materi: "${item.materialScope}"]` : ''
+      }`
+  )
+  .join('\n')}
+
+Kembalikan output JSON sesuai skema:
+- units: daftar ${unitCount} Bab beserta nomor unitIndex (1..${unitCount}) dan judul unitTitle.
+- mappings: daftar pemetaan untuk setiap langkah ATP dengan atpItemId (merujuk ID langkah ATP di atas), unitTitle, dan materialScope.`;
+
+      const response = await generateContentWithRetry(ai, {
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              units: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    unitIndex: { type: Type.INTEGER },
+                    unitTitle: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                  },
+                  required: ['unitIndex', 'unitTitle'],
+                },
+              },
+              mappings: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    atpItemId: { type: Type.STRING },
+                    unitTitle: { type: Type.STRING },
+                    materialScope: { type: Type.STRING },
+                  },
+                  required: ['atpItemId', 'unitTitle', 'materialScope'],
+                },
+              },
+            },
+            required: ['units', 'mappings'],
+          },
+        },
+      });
+
+      const parsed = cleanAndParseJSON(response.text, null);
+      if (parsed && Array.isArray(parsed.mappings) && parsed.mappings.length > 0) {
+        // Enforce teacher unit titles on the units list
+        const finalUnits = (parsed.units || []).map((u: any, idx: number) => {
+          const uIdx = u.unitIndex || idx + 1;
+          const teacherTitle = teacherUnitMap[uIdx];
+          return {
+            unitIndex: uIdx,
+            unitTitle: teacherTitle || u.unitTitle || `Bab ${uIdx}`,
+            description: u.description || '',
+          };
+        });
+
+        // If units count was less than unitCount, fill missing
+        for (let i = 1; i <= unitCount; i++) {
+          if (!finalUnits.some((u: any) => u.unitIndex === i)) {
+            finalUnits.push({
+              unitIndex: i,
+              unitTitle: teacherUnitMap[i] || `Bab ${i}`,
+              description: '',
+            });
+          }
+        }
+        finalUnits.sort((a: any, b: any) => a.unitIndex - b.unitIndex);
+
+        return res.json({
+          success: true,
+          data: {
+            units: finalUnits,
+            mappings: parsed.mappings,
+          },
+          engine: 'gemini',
+        });
+      }
+    } catch (error: any) {
+      console.warn('Gemini ATP mapping generation failed, using pedagogical rule fallback:', error);
+    }
+  }
+
+  // Fallback: Pedagogical Rule-Based Mapping Engine
+  const fallback = fallbackGenerateATPMapping({
+    atpItems,
+    targetUnitCount: unitCount,
+    teacherUnits: teacherUnitMap,
+    subject,
+  });
+
+  return res.json({ success: true, data: fallback, engine: 'pedagogical_engine' });
 });
 
 // 4. Endpoint: AI Refine / Polish any custom text

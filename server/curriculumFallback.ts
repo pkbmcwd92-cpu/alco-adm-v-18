@@ -345,3 +345,79 @@ export function fallbackGenerateLearningPlan(params: FallbackGenerateLearningPla
   };
 }
 
+export interface FallbackATPMappingParams {
+  atpItems: Array<{
+    id: string;
+    stepNumber?: number;
+    tpCode?: string;
+    tpStatement?: string;
+    unitTitle?: string;
+    materialScope?: string;
+  }>;
+  targetUnitCount: number;
+  teacherUnits: Record<number, string>;
+  subject?: string;
+}
+
+export function fallbackGenerateATPMapping(params: FallbackATPMappingParams) {
+  const { atpItems, targetUnitCount, teacherUnits, subject = 'Mata Pelajaran' } = params;
+  const count = Math.max(1, Math.min(20, targetUnitCount || 6));
+  const totalItems = Math.max(1, atpItems.length);
+
+  // Build units list
+  const units: Array<{ unitIndex: number; unitTitle: string; description: string }> = [];
+  for (let u = 1; u <= count; u++) {
+    const existingTitle = teacherUnits[u];
+    const unitTitle =
+      existingTitle && existingTitle.trim().length > 0
+        ? existingTitle.trim()
+        : `Bab ${u}: Pembelajaran ${subject} Bagian ${u}`;
+    units.push({
+      unitIndex: u,
+      unitTitle,
+      description: `Materi pembelajaran unit ke-${u}`,
+    });
+  }
+
+  // Distribute ATP items across units chronologically
+  const mappings: Array<{ atpItemId: string; unitTitle: string; materialScope: string }> = [];
+
+  atpItems.forEach((item, idx) => {
+    // Calculate which unit this item falls into (balanced distribution)
+    const unitIdx = Math.min(count, Math.floor((idx / totalItems) * count) + 1);
+    const assignedUnit = units.find((u) => u.unitIndex === unitIdx) || units[0];
+
+    const finalUnitTitle =
+      item.unitTitle && item.unitTitle.trim().length > 0
+        ? item.unitTitle.trim()
+        : assignedUnit.unitTitle;
+
+    let derivedMaterial =
+      item.materialScope && item.materialScope.trim().length > 0
+        ? item.materialScope.trim()
+        : '';
+
+    if (!derivedMaterial) {
+      if (item.tpStatement) {
+        // Extract meaningful topic from TP statement
+        const cleanStmt = item.tpStatement.replace(/^(peserta didik|murid|siswa)\s+(dapat|mampu)\s+/i, '');
+        derivedMaterial = cleanStmt.length > 60 ? `${cleanStmt.substring(0, 57)}...` : cleanStmt;
+      } else {
+        derivedMaterial = `Materi Pokok Langkah #${item.stepNumber || idx + 1}`;
+      }
+    }
+
+    mappings.push({
+      atpItemId: item.id,
+      unitTitle: finalUnitTitle,
+      materialScope: derivedMaterial,
+    });
+  });
+
+  return {
+    units,
+    mappings,
+  };
+}
+
+
