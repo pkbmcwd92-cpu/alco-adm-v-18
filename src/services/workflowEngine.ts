@@ -251,6 +251,7 @@ export function validateWorkflowDependencies(
     tp: { id: 'tp', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     atp: { id: 'atp', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     'atp-mapping': { id: 'atp-mapping', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
+    'annual-planning': { id: 'annual-planning', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     semester: { id: 'semester', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     'k13-kd': { id: 'k13-kd', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
     'k13-indikator': { id: 'k13-indikator', status: 'BLOCKED', isBlocked: true, isComplete: false, isStale: false },
@@ -629,6 +630,42 @@ export function validateWorkflowDependencies(
       reason: !isATPComplete ? 'Memerlukan penyusunan Alur Tujuan Pembelajaran (ATP) terlebih dahulu' : undefined,
     };
 
+    // 5c. Perencanaan Tahunan (Kalender & JP S1 & S2) step state
+    let isAnnualPlanningComplete = false;
+    try {
+      const v5State = loadStorageV5();
+      const currentYearPlanId = v5State.activeYearPlanId;
+      const sPlans = currentYearPlanId
+        ? v5State.semesterPlans.filter((sp) => sp.yearPlanId === currentYearPlanId)
+        : [];
+      const s1 = sPlans.find((sp) => sp.semester === 1);
+      const s2 = sPlans.find((sp) => sp.semester === 2);
+      if (s1 && s2) {
+        const s1Cap = resolveSemesterCapacityV5(s1.id, v5State);
+        const s2Cap = resolveSemesterCapacityV5(s2.id, v5State);
+        isAnnualPlanningComplete = Boolean(s1Cap?.isReady && s2Cap?.isReady);
+      }
+    } catch {
+      isAnnualPlanningComplete = false;
+    }
+
+    stepStates['annual-planning'] = {
+      id: 'annual-planning',
+      status: isATPBlocked
+        ? 'BLOCKED'
+        : isATPStale
+        ? 'STALE'
+        : isAnnualPlanningComplete
+        ? 'COMPLETE'
+        : isATPComplete
+        ? 'READY'
+        : 'BLOCKED',
+      isBlocked: !isATPComplete,
+      isComplete: isAnnualPlanningComplete,
+      isStale: isATPStale,
+      reason: !isATPComplete ? 'Memerlukan penyusunan Alur Tujuan Pembelajaran (ATP) terlebih dahulu' : undefined,
+    };
+
     // 6. Semester Selection step state
     stepStates.semester = {
       id: 'semester',
@@ -660,6 +697,8 @@ export function validateWorkflowDependencies(
     stepStates.atp.status = 'BLOCKED';
     stepStates['atp-mapping'].isBlocked = true;
     stepStates['atp-mapping'].status = 'BLOCKED';
+    stepStates['annual-planning'].isBlocked = true;
+    stepStates['annual-planning'].status = 'BLOCKED';
     stepStates.semester.isBlocked = true;
     stepStates.semester.status = 'BLOCKED';
     stepStates['k13-kd'].isBlocked = true;

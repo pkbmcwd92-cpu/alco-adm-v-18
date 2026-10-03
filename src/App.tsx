@@ -80,6 +80,7 @@ import { CPAnalysisManager } from './components/CPAnalysisManager';
 import { TPManager } from './components/TPManager';
 import { ATPManager } from './components/ATPManager';
 import { ATPUnitMappingManager } from './components/ATPUnitMappingManager';
+import { AnnualPlanningManager } from './components/AnnualPlanningManager';
 import { SemesterSelector } from './components/SemesterSelector';
 import { K13Manager } from './components/administration/K13Manager';
 import { AdministrationHub } from './components/administration/AdministrationHub';
@@ -1372,8 +1373,24 @@ export function App() {
               atp={activeATP}
               tp={activeTP}
               onSaveATP={handleSaveATP}
-              onNextStep={() => setCurrentStep('semester')}
+              onNextStep={() => setCurrentStep('annual-planning')}
               onBackToATP={() => setCurrentStep('atp')}
+            />
+          )}
+
+          {currentStep === 'annual-planning' && (
+            <AnnualPlanningManager
+              school={activeSchoolForView}
+              profile={activeProfile}
+              academicSetting={transitionalAcademicSetting}
+              yearPlan={activeYearPlan}
+              semesterPlans={semesterPlansForActiveYear}
+              atp={activeATP}
+              onSaveCalendar={handleSaveCalendar}
+              onSaveSemesterJPSetting={handleSaveSemesterJPSetting}
+              onSaveTimeAllocations={handleSaveTimeAllocations}
+              onNextStep={() => setCurrentStep('semester')}
+              onBackToMapping={() => setCurrentStep('atp-mapping')}
             />
           )}
 
@@ -1383,7 +1400,7 @@ export function App() {
               activeSemesterPlan={activeSemesterPlan}
               onSelectSemester={handleSelectSemester}
               onNextStep={() => setCurrentStep('admin')}
-              onBackToATP={() => setCurrentStep('atp-mapping')}
+              onBackToATP={() => setCurrentStep('annual-planning')}
             />
           )}
 

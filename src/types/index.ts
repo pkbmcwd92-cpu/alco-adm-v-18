@@ -1584,6 +1584,7 @@ export type WorkflowStepId =
   | 'tp'
   | 'atp'
   | 'atp-mapping'
+  | 'annual-planning'
   | 'semester'
   | 'k13-kd'
   | 'k13-indikator'

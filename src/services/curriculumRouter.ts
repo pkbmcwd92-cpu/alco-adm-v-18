@@ -110,15 +110,22 @@ export const MERDEKA_WORKFLOW_STEPS: WorkflowStepItem[] = [
     description: 'Unit/Bab & Lingkup Materi',
   },
   {
-    id: 'semester',
+    id: 'annual-planning',
     number: '08',
+    title: 'PERENCANAAN',
+    shortLabel: 'Rencana Tahunan',
+    description: 'Kalender & JP Semester 1 & 2',
+  },
+  {
+    id: 'semester',
+    number: '09',
     title: 'SEMESTER',
     shortLabel: 'Semester',
     description: 'Pilih Semester Aktif',
   },
   {
     id: 'admin',
-    number: '09',
+    number: '10',
     title: 'ADMINISTRASI',
     shortLabel: 'Administrasi',
     description: 'Perencanaan, Asesmen & Dokumen',
@@ -261,7 +268,7 @@ export function getCurriculumDocumentTypes(
 export function isStepAllowed(stepId: WorkflowStepId, curriculumType: CurriculumType): boolean {
   if (stepId === 'profile' || stepId === 'academic' || stepId === 'admin') return true;
   if (curriculumType === 'KURIKULUM_MERDEKA') {
-    return ['cp', 'cp-analysis', 'tp', 'atp', 'atp-mapping', 'semester'].includes(stepId);
+    return ['cp', 'cp-analysis', 'tp', 'atp', 'atp-mapping', 'annual-planning', 'semester'].includes(stepId);
   } else {
     // k13-kkm is allowed only as legacy redirection
     return ['k13-kd', 'k13-indikator', 'k13-tujuan', 'k13-kkm'].includes(stepId);
@@ -282,7 +289,7 @@ export function resolveStep(stepId: WorkflowStepId, curriculumType: CurriculumTy
   if (curriculumType === 'K13') {
     if (stepId === 'cp' || stepId === 'cp-analysis') return 'k13-kd';
     if (stepId === 'tp') return 'k13-indikator';
-    if (stepId === 'atp' || stepId === 'atp-mapping' || stepId === 'semester') return 'k13-tujuan';
+    if (stepId === 'atp' || stepId === 'atp-mapping' || stepId === 'annual-planning' || stepId === 'semester') return 'k13-tujuan';
     return 'k13-kd';
   } else {
     if (stepId === 'k13-kd') return 'cp';

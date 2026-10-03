@@ -33,7 +33,7 @@ export const SemesterSelector: React.FC<SemesterSelectorProps> = ({
                 <span>Pilih Semester Pembelajaran</span>
               </h3>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                Tahap 08
+                Tahap 09
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -140,7 +140,7 @@ export const SemesterSelector: React.FC<SemesterSelectorProps> = ({
           className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 shadow-xs transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Kembali ke Pemetaan Unit/Bab</span>
+          <span>Kembali ke Perencanaan Tahunan (08)</span>
         </button>
 
         <button
