@@ -1176,17 +1176,20 @@ export function fallbackGenerateCanonicalATPUnitMapping(
         ccTp.scopeCode.trim().toUpperCase() === 'MAT' || 
         ccTp.scopeCode.trim().toUpperCase() === 'GEN';
 
-      const genericWords = ['profil', 'pancasila', 'karakter', 'evaluasi', 'diri', 'refleksi', 'sikap', 'tanggung', 'jawab', 'nilai', 'sosial', 'moral', 'perilaku', 'akhlak', 'gotong', 'royong', 'mandiri', 'kreatif', 'kritis', 'kebinekaan', 'global', 'spiritual', 'emosional'];
-      const topicalKeywords = [
-        'gerak', 'lokomotor', 'nonlokomotor', 'manipulatif', 'senam', 'bola', 'permainan', 'atletik', 'kebugaran', 'jasmani', 'kesehatan', 'renang', 'air', 'pola', 'ritmik', 'irama', 'pencak', 'silat', 'bela', 'diri', 'sehat', 'makanan', 'gizi', 'penyakit', 'bahaya', 'narkoba', 'napza', 'seksual', 'p3k', 'cedera'
-      ];
+      const genericAndNeutralWords = new Set([
+        // generic cross-cutting terms
+        'karakter', 'evaluasi', 'diri', 'refleksi', 'sikap', 'tanggung', 'jawab', 
+        'nilai', 'sosial', 'moral', 'perilaku', 'akhlak', 'gotong', 'royong', 
+        'mandiri', 'kreatif', 'kritis', 'kebinekaan', 'spiritual', 'emosional', 'profil',
+        
+        // neutral / connecting words
+        'dalam', 'pada', 'melalui', 'saat', 'kegiatan', 'aktivitas', 'pembelajaran',
+        'dan', 'atau', 'dengan', 'untuk', 'secara', 'yang', 'serta', 'ke', 'di', 'dari',
+        'sebagai', 'dapat', 'mampu', 'oleh', 'adalah', 'adapun', 'ini', 'itu', 'ia', 'mereka'
+      ]);
 
       const cleanWords = ccScopeClean.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-      const hasSpecificTopic = cleanWords.some(w => {
-        if (topicalKeywords.includes(w)) return true;
-        if (w.length > 3 && !genericWords.includes(w)) return true;
-        return false;
-      });
+      const hasSpecificTopic = cleanWords.some(w => w.length > 2 && !genericAndNeutralWords.has(w));
 
       const isTrulyGlobal = unspecificScopeCode && (!ccScopeClean || ccScopeClean === '' || !hasSpecificTopic);
 
