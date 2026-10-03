@@ -302,7 +302,11 @@ export async function generateTPWithAI(params: GenerateTPParams): Promise<TPItem
     }
 
     const rawItems = data.items;
-    return mergeGeneratedTPsWithExisting(rawItems, params.existingTps || []);
+    return mergeGeneratedTPsWithExisting(
+      rawItems,
+      params.existingTps || [],
+      params.cpAnalysisItems || []
+    );
   } catch (err) {
     throw new Error(formatAIErrorMessage(err, 'merumuskan Tujuan Pembelajaran'));
   }
@@ -311,12 +315,18 @@ export async function generateTPWithAI(params: GenerateTPParams): Promise<TPItem
 /**
  * Deterministic safe merge for TP regeneration.
  * Matches generated TPs to existing TPs using cpAnalysisItemIds, elementName, contentScope, statement.
- * Strictly preserves existing TPItem.id and teacher work. Never automatically deletes existing TPs.
+ * Strictly preserves existing TPItem.id and teacher work. Never carries over stale cpAnalysisItemIds.
  */
 export function mergeGeneratedTPsWithExisting(
   generatedItems: Array<Partial<TPItem>>,
-  existingItems: TPItem[] = []
+  existingItems: TPItem[] = [],
+  activeAnalysisItems: Array<{ id: string }> = []
 ): TPItem[] {
+  const activeAnalysisItemIds = new Set<string>(
+    activeAnalysisItems.map((a) => String(a.id)).filter(Boolean)
+  );
+  const hasCanonicalAnalysis = activeAnalysisItemIds.size > 0;
+
   if (!existingItems || existingItems.length === 0) {
     return generatedItems.map((g, idx) => {
       const stmt = g.statement || (g as any).description || '';
@@ -417,12 +427,18 @@ export function mergeGeneratedTPsWithExisting(
         ? bestMatch.p3Dimensions
         : (Array.isArray(gen.p3Dimensions) ? gen.p3Dimensions : []);
 
-      const combinedAnalysisIds = Array.from(
-        new Set([
-          ...(Array.isArray(bestMatch.cpAnalysisItemIds) ? bestMatch.cpAnalysisItemIds : []),
-          ...(Array.isArray(gen.cpAnalysisItemIds) ? gen.cpAnalysisItemIds : []),
-        ])
-      );
+      // Canonical lineage resolution: do NOT union with stale existing lineage.
+      const genIds = Array.isArray(gen.cpAnalysisItemIds) ? gen.cpAnalysisItemIds : [];
+      const existIds = Array.isArray(bestMatch.cpAnalysisItemIds) ? bestMatch.cpAnalysisItemIds : [];
+
+      let finalAnalysisIds: string[];
+      if (genIds.length > 0) {
+        finalAnalysisIds = genIds;
+      } else if (hasCanonicalAnalysis) {
+        finalAnalysisIds = existIds.filter((id) => activeAnalysisItemIds.has(id));
+      } else {
+        finalAnalysisIds = existIds;
+      }
 
       result.push({
         ...bestMatch,
@@ -434,7 +450,7 @@ export function mergeGeneratedTPsWithExisting(
         competence: finalCompetence,
         contentScope: finalContentScope,
         p3Dimensions: finalP3,
-        cpAnalysisItemIds: combinedAnalysisIds,
+        cpAnalysisItemIds: finalAnalysisIds,
         order: result.length + 1,
       });
     } else {
@@ -455,13 +471,25 @@ export function mergeGeneratedTPsWithExisting(
     }
   }
 
-  // Existing unmatched TPs are preserved (never automatically deleted)
+  // Unmatched existing TPs processing
   for (const exist of existingItems) {
     if (!matchedExistingIds.has(exist.id)) {
-      result.push({
-        ...exist,
-        order: result.length + 1,
-      });
+      if (!hasCanonicalAnalysis) {
+        result.push({
+          ...exist,
+          order: result.length + 1,
+        });
+      } else {
+        const existIds = Array.isArray(exist.cpAnalysisItemIds) ? exist.cpAnalysisItemIds : [];
+        const validLineageIds = existIds.filter((id) => activeAnalysisItemIds.has(id));
+        if (validLineageIds.length > 0) {
+          result.push({
+            ...exist,
+            cpAnalysisItemIds: validLineageIds,
+            order: result.length + 1,
+          });
+        }
+      }
     }
   }
 
