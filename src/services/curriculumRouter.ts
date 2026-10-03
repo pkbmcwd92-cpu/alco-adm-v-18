@@ -178,6 +178,7 @@ export const MERDEKA_EXPORT_DOC_TYPES: DocumentType[] = [
   'TP',
   'ANALISIS_CP_TP',
   'ATP',
+  'PEMETAAN_ATP_UNIT',
   'KALENDER_AKADEMIK',
   'ALOKASI_WAKTU',
   'PROTA',

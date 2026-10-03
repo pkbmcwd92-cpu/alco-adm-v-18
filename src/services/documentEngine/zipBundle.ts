@@ -55,6 +55,7 @@ export function getDocumentZipFolder(type: DocumentType, isBlankMode: boolean = 
       return '01_Kurikulum';
 
     case 'ATP':
+    case 'PEMETAAN_ATP_UNIT':
     case 'KALENDER_AKADEMIK':
     case 'ALOKASI_WAKTU':
     case 'PROTA':
@@ -92,6 +93,7 @@ export function getBlankSubCategoryFolder(type: DocumentType): string {
       return '01_Kurikulum';
 
     case 'ATP':
+    case 'PEMETAAN_ATP_UNIT':
     case 'KALENDER_AKADEMIK':
     case 'ALOKASI_WAKTU':
     case 'PROTA':
@@ -128,11 +130,12 @@ export function getDocumentSequenceNumber(type: DocumentType): number {
     PENETAPAN_KKM: 2,
 
     ATP: 1,
-    KALENDER_AKADEMIK: 2,
-    ALOKASI_WAKTU: 3,
-    PROTA: 4,
-    PROMES: 5,
-    MODUL_AJAR: 6,
+    PEMETAAN_ATP_UNIT: 2,
+    KALENDER_AKADEMIK: 3,
+    ALOKASI_WAKTU: 4,
+    PROTA: 5,
+    PROMES: 6,
+    MODUL_AJAR: 7,
 
     KKTP: 1,
     ASESMEN: 2,
@@ -202,6 +205,7 @@ export function formatDocumentZipFileName(
   const baseNames: Record<DocumentType, string> = {
     ANALISIS_CP_TP: 'Analisis_CP_TP',
     ATP: 'ATP',
+    PEMETAAN_ATP_UNIT: 'Pemetaan_ATP_Unit',
     KALENDER_AKADEMIK: 'Kalender_Pendidikan',
     ALOKASI_WAKTU: 'Alokasi_Waktu',
     PROTA: 'Program_Tahunan_PROTA',
@@ -296,6 +300,7 @@ export async function generateZipBundle(
         return (
           type !== 'ANALISIS_CP_TP' &&
           type !== 'ATP' &&
+          type !== 'PEMETAAN_ATP_UNIT' &&
           type !== 'MODUL_AJAR' &&
           type !== 'KKTP' &&
           type !== 'ASESMEN' &&

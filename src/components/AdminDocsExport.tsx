@@ -860,7 +860,7 @@ export const AdminDocsExport: React.FC<AdminDocsExportProps> = ({
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-blue-600" />
                 <span>
-                  Katalog Dokumen Administrasi ({DOCUMENT_CATALOG.filter((c) => isK13Curriculum ? !['ANALISIS_CP_TP', 'ATP', 'MODUL_AJAR', 'KKTP', 'ASESMEN', 'CP', 'TP'].includes(c.type) : !['ANALISIS_SKL_KI_KD', 'PENETAPAN_KKM'].includes(c.type)).length})
+                  Katalog Dokumen Administrasi ({DOCUMENT_CATALOG.filter((c) => isK13Curriculum ? !['ANALISIS_CP_TP', 'ATP', 'PEMETAAN_ATP_UNIT', 'MODUL_AJAR', 'KKTP', 'ASESMEN', 'CP', 'TP'].includes(c.type) : !['ANALISIS_SKL_KI_KD', 'PENETAPAN_KKM'].includes(c.type)).length})
                 </span>
               </h4>
               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -873,7 +873,7 @@ export const AdminDocsExport: React.FC<AdminDocsExportProps> = ({
                 const itemsInCategory = DOCUMENT_CATALOG.filter((c) => {
                   if (c.category !== category.key) return false;
                   if (isK13Curriculum) {
-                    return !['ANALISIS_CP_TP', 'ATP', 'MODUL_AJAR', 'KKTP', 'ASESMEN', 'CP', 'TP'].includes(c.type);
+                    return !['ANALISIS_CP_TP', 'ATP', 'PEMETAAN_ATP_UNIT', 'MODUL_AJAR', 'KKTP', 'ASESMEN', 'CP', 'TP'].includes(c.type);
                   } else {
                     return !['ANALISIS_SKL_KI_KD', 'PENETAPAN_KKM'].includes(c.type);
                   }
