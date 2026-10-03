@@ -575,7 +575,10 @@ export function validateTPDataWorkflow(
       issues.push(`Butir TP ke-${i + 1} belum memiliki kode TP.`);
     } else {
       const normalizedCode = item.code.trim().toUpperCase();
-      if (seenCodes.has(normalizedCode)) {
+      const tpCodeRegex = /^E\d+-[A-Z0-9]{2,5}-\d{2}$/;
+      if (!tpCodeRegex.test(normalizedCode)) {
+        issues.push(`Format Kode TP "${item.code}" tidak sah! Format harus sesuai pola E1-PGD-01 (huruf E kapital, angka, singkatan materi kapital 2-5 karakter, dan nomor urut 2 digit).`);
+      } else if (seenCodes.has(normalizedCode)) {
         issues.push(`Terdeteksi duplikasi Kode TP (${item.code}) pada daftar TP.`);
       }
       seenCodes.add(normalizedCode);

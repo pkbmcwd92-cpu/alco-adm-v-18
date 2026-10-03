@@ -137,9 +137,14 @@ export const CPManager: React.FC<CPManagerProps> = ({
       };
     });
 
-    // 2. Ensure codes are uppercase and not duplicate
+    // 2. Ensure codes are uppercase, match ^E\d+$, and are not duplicate
     const codes = new Set<string>();
+    const elementCodeRegex = /^E\d+$/;
     for (const e of updatedElements) {
+      if (!elementCodeRegex.test(e.code)) {
+        setValidationError(`Format kode elemen "${e.code}" tidak sah! Format kode elemen harus sesuai pola E1, E2, dst (diawali huruf E kapital diikuti angka).`);
+        return false;
+      }
       if (codes.has(e.code)) {
         setValidationError(`Kode elemen "${e.code}" duplikat! Kode elemen harus unik dalam satu Capaian Pembelajaran.`);
         return false;

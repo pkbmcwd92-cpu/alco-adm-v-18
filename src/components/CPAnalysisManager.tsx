@@ -96,8 +96,15 @@ export const CPAnalysisManager: React.FC<CPAnalysisManagerProps> = ({
   }, [cpAnalysis]);
 
   const handleUpdateItem = (id: string, field: keyof CPAnalysisItem, value: any) => {
+    let finalValue = value;
+    if (field === 'scopeCode') {
+      finalValue = String(value || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 5);
+    }
     setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, [field]: value } : it))
+      prev.map((it) => (it.id === id ? { ...it, [field]: finalValue } : it))
     );
   };
 
