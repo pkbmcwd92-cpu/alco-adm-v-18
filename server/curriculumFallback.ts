@@ -1030,7 +1030,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       };
     });
 
-    return {
+    const resultMapping = {
       id: existingMapping.id || `aum-${Date.now()}`,
       academicSettingId: existingMapping.academicSettingId || academicSettingId,
       atpId: atpData.id || '',
@@ -1040,6 +1040,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       basedOnAtpUpdatedAt: atpData.updatedAt,
       updatedAt: new Date().toISOString(),
     };
+    return enforceCanonicalMappingInvariants(resultMapping, validTpItems, validAtpItems);
   }
 
   // Initial Generation: Deterministic Semantic Clustering along canonical ATP sequence
@@ -1147,19 +1148,31 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       }
     });
 
-    // Link relevant cross-cutting ATP items to their semantically matching units without bridging
+    // 1. Link relevant cross-cutting ATP items using semantic relevance
     crossCuttingAtpItems.forEach((ccAtp) => {
       const ccTp = ccAtp.tpId ? tpMap.get(ccAtp.tpId) : undefined;
       if (!ccTp) return;
 
       const unitTps = Array.from(linkedTpIdsSet).map(id => tpMap.get(id)).filter(Boolean);
+      
       const hasOverlap = unitTps.some(uTp => {
+        if (ccTp.scopeCode && uTp.scopeCode && ccTp.scopeCode.trim().toUpperCase() === uTp.scopeCode.trim().toUpperCase()) {
+          return true;
+        }
+        const ccScope = (ccTp.contentScope || '').toLowerCase().trim();
+        const uScope = (uTp.contentScope || '').toLowerCase().trim();
+        if (ccScope && uScope && (ccScope === uScope || ccScope.includes(uScope) || uScope.includes(ccScope))) {
+          return true;
+        }
         const kwCC = extractKeywords(`${ccTp.contentScope || ''} ${ccTp.statement || ''}`);
         const kwUTp = extractKeywords(`${uTp.contentScope || ''} ${uTp.statement || ''}`);
         return kwCC.some(k => kwUTp.includes(k));
       });
 
-      if (hasOverlap || isCrossCuttingTp(ccTp)) {
+      const ccScopeClean = (ccTp.contentScope || '').toLowerCase().trim();
+      const isTrulyGlobal = !ccTp.scopeCode || ccTp.scopeCode.trim().toUpperCase() === 'MAT' || ccTp.scopeCode.trim().toUpperCase() === 'GEN' || ccScopeClean === '';
+
+      if (hasOverlap || isTrulyGlobal) {
         if (!linkedTpIdsSet.has(ccAtp.tpId!)) {
           linkedTpIdsSet.add(ccAtp.tpId!);
         }
@@ -1198,7 +1211,12 @@ export function fallbackGenerateCanonicalATPUnitMapping(
 
     const distinctScopeMap = new Map<string, { tpIds: Set<string>; atpIds: Set<string> }>();
 
-    linkedTps.forEach((tp) => {
+    // 2. Build primary materials from non-cross-cutting TPs
+    const nonCCTps = linkedTps.filter(tp => !isCrossCuttingTp(tp));
+    const ccTps = linkedTps.filter(tp => isCrossCuttingTp(tp));
+
+    const tpsToProcess = nonCCTps.length > 0 ? nonCCTps : linkedTps;
+    tpsToProcess.forEach((tp) => {
       const scopeTitle = extractTopicFromTp(tp);
       const normalizedKey = scopeTitle.toLowerCase().trim();
 
@@ -1207,8 +1225,48 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       }
 
       const entry = distinctScopeMap.get(normalizedKey)!;
-      entry.tpIds.add(tp!.id);
-      cluster.filter((a) => a.tpId === tp!.id).forEach((a) => entry.atpIds.add(a.id));
+      entry.tpIds.add(tp.id);
+      validAtpItems
+        .filter((a) => a.tpId === tp.id && linkedAtpItemIds.includes(a.id))
+        .forEach((a) => entry.atpIds.add(a.id));
+    });
+
+    // 2b. Match cross-cutting TPs to primary materials if there is semantic evidence
+    ccTps.forEach((ccTp) => {
+      let matchedMaterialKey: string | null = null;
+      let highestSim = 0;
+
+      distinctScopeMap.forEach((entry, normKey) => {
+        const firstTpId = Array.from(entry.tpIds)[0];
+        const mTp = tpMap.get(firstTpId);
+        if (!mTp) return;
+
+        let sim = 0;
+        if (ccTp.scopeCode && mTp.scopeCode && ccTp.scopeCode.trim().toUpperCase() === mTp.scopeCode.trim().toUpperCase()) {
+          sim += 10;
+        }
+        const ccScope = (ccTp.contentScope || '').toLowerCase().trim();
+        const mScope = (mTp.contentScope || '').toLowerCase().trim();
+        if (ccScope && mScope && (ccScope === mScope || ccScope.includes(mScope) || mScope.includes(ccScope))) {
+          sim += 5;
+        }
+        const kwCC = extractKeywords(`${ccTp.contentScope || ''} ${ccTp.statement || ''}`);
+        const kwMTp = extractKeywords(`${mTp.contentScope || ''} ${mTp.statement || ''}`);
+        sim += kwCC.filter(k => kwMTp.includes(k)).length;
+
+        if (sim > highestSim && sim >= 2) {
+          highestSim = sim;
+          matchedMaterialKey = normKey;
+        }
+      });
+
+      if (matchedMaterialKey) {
+        const entry = distinctScopeMap.get(matchedMaterialKey)!;
+        entry.tpIds.add(ccTp.id);
+        validAtpItems
+          .filter((a) => a.tpId === ccTp.id && linkedAtpItemIds.includes(a.id))
+          .forEach((a) => entry.atpIds.add(a.id));
+      }
     });
 
     let matIndex = 1;
@@ -1219,23 +1277,33 @@ export function fallbackGenerateCanonicalATPUnitMapping(
       const matTpIds = Array.from(entry.tpIds);
       const matAtpIds = Array.from(entry.atpIds);
 
+      let finalMatAtpIds = matAtpIds;
+      if (finalMatAtpIds.length === 0) {
+        finalMatAtpIds = validAtpItems
+          .filter((a) => a.tpId && matTpIds.includes(a.tpId) && linkedAtpItemIds.includes(a.id))
+          .map((a) => a.id);
+      }
+
       materials.push({
         id: `mat-${Date.now()}-${unitOrder}-${matIndex}`,
         title,
         order: matIndex,
-        linkedTpIds: matTpIds.length > 0 ? matTpIds : [...linkedTpIds],
-        linkedAtpItemIds: matAtpIds.length > 0 ? matAtpIds : [...linkedAtpItemIds],
+        linkedTpIds: matTpIds,
+        linkedAtpItemIds: finalMatAtpIds,
       });
       matIndex++;
     });
 
     if (materials.length === 0) {
+      const nonCCTpIds = nonCCTps.map(t => t.id);
+      const nonCCAtpIds = validAtpItems.filter(a => a.tpId && nonCCTpIds.includes(a.tpId) && linkedAtpItemIds.includes(a.id)).map(a => a.id);
+
       materials.push({
         id: `mat-${Date.now()}-${unitOrder}-1`,
         title: mainTopic.replace(/^(bab|unit)\s*\d*[:\-]?\s*/i, ''),
         order: 1,
-        linkedTpIds,
-        linkedAtpItemIds,
+        linkedTpIds: nonCCTpIds.length > 0 ? nonCCTpIds : linkedTpIds,
+        linkedAtpItemIds: nonCCAtpIds.length > 0 ? nonCCAtpIds : linkedAtpItemIds,
       });
     }
 
@@ -1249,7 +1317,7 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     });
   });
 
-  return {
+  const finalMapping = {
     id: `aum-${Date.now()}`,
     academicSettingId,
     atpId: atpData.id || '',
@@ -1259,6 +1327,213 @@ export function fallbackGenerateCanonicalATPUnitMapping(
     basedOnAtpUpdatedAt: atpData.updatedAt,
     updatedAt: new Date().toISOString(),
   };
+
+  return enforceCanonicalMappingInvariants(finalMapping, validTpItems, validAtpItems);
+}
+
+export function enforceCanonicalMappingInvariants(
+  mapping: any,
+  validTpItems: any[],
+  validAtpItems: any[]
+): any {
+  if (!mapping || !Array.isArray(mapping.units)) return mapping;
+
+  const tpMap = new Map<string, any>();
+  validTpItems.forEach((tp) => tpMap.set(tp.id, tp));
+
+  const atpMap = new Map<string, any>();
+  validAtpItems.forEach((atp) => atpMap.set(atp.id, atp));
+
+  const seenUnitIds = new Set<string>();
+  const seenMaterialIds = new Set<string>();
+
+  mapping.units.forEach((unit: any, uIdx: number) => {
+    if (!unit.id || seenUnitIds.has(unit.id)) {
+      unit.id = `unit-sanitized-${Date.now()}-${uIdx}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    seenUnitIds.add(unit.id);
+
+    if (Array.isArray(unit.materials)) {
+      unit.materials.forEach((mat: any, mIdx: number) => {
+        if (!mat.id || seenMaterialIds.has(mat.id)) {
+          mat.id = `mat-sanitized-${Date.now()}-${uIdx}-${mIdx}-${Math.random().toString(36).substring(2, 6)}`;
+        }
+        seenMaterialIds.add(mat.id);
+      });
+    }
+  });
+
+  mapping.units.forEach((unit: any) => {
+    let unitTpIds = (Array.isArray(unit.linkedTpIds) ? unit.linkedTpIds : [])
+      .filter((id: string) => tpMap.has(id));
+    let unitAtpIds = (Array.isArray(unit.linkedAtpItemIds) ? unit.linkedAtpItemIds : [])
+      .filter((id: string) => atpMap.has(id));
+
+    unitAtpIds.forEach((atpId: string) => {
+      const atp = atpMap.get(atpId);
+      if (atp && atp.tpId && !unitTpIds.includes(atp.tpId)) {
+        unitTpIds.push(atp.tpId);
+      }
+    });
+
+    unit.linkedTpIds = Array.from(new Set(unitTpIds));
+    unit.linkedAtpItemIds = Array.from(new Set(unitAtpIds));
+
+    if (Array.isArray(unit.materials)) {
+      unit.materials.forEach((mat: any) => {
+        let matTpIds = (Array.isArray(mat.linkedTpIds) ? mat.linkedTpIds : [])
+          .filter((id: string) => tpMap.has(id) && unit.linkedTpIds.includes(id));
+        let matAtpIds = (Array.isArray(mat.linkedAtpItemIds) ? mat.linkedAtpItemIds : [])
+          .filter((id: string) => atpMap.has(id) && unit.linkedAtpItemIds.includes(id));
+
+        matAtpIds.forEach((atpId: string) => {
+          const atp = atpMap.get(atpId);
+          if (atp && atp.tpId && !matTpIds.includes(atp.tpId)) {
+            matTpIds.push(atp.tpId);
+          }
+        });
+
+        matTpIds.forEach((tpId: string) => {
+          const hasSupportingAtp = matAtpIds.some(atpId => atpMap.get(atpId)?.tpId === tpId);
+          if (!hasSupportingAtp) {
+            const unitAtpItemsForTp = unit.linkedAtpItemIds.filter((atpId: string) => atpMap.get(atpId)?.tpId === tpId);
+            unitAtpItemsForTp.forEach((atpId: string) => {
+              if (!matAtpIds.includes(atpId)) {
+                matAtpIds.push(atpId);
+              }
+            });
+          }
+        });
+
+        mat.linkedTpIds = Array.from(new Set(matTpIds));
+        mat.linkedAtpItemIds = Array.from(new Set(matAtpIds));
+      });
+    }
+  });
+
+  const coveredAtpItemIds = new Set<string>();
+  mapping.units.forEach((u: any) => {
+    (u.linkedAtpItemIds || []).forEach((id: string) => coveredAtpItemIds.add(id));
+  });
+
+  const missingAtpItems = validAtpItems.filter(atp => !coveredAtpItemIds.has(atp.id));
+  if (missingAtpItems.length > 0) {
+    missingAtpItems.forEach(atp => {
+      const tp = atp.tpId ? tpMap.get(atp.tpId) : undefined;
+      if (!tp) return;
+
+      let bestUnit: any = null;
+      let highestUnitSim = 0;
+
+      mapping.units.forEach((u: any) => {
+        let sim = 0;
+        const uTps = (u.linkedTpIds || []).map((id: string) => tpMap.get(id)).filter(Boolean);
+        uTps.forEach((uTp: any) => {
+          if (tp.scopeCode && uTp.scopeCode && tp.scopeCode.trim().toUpperCase() === uTp.scopeCode.trim().toUpperCase()) {
+            sim += 10;
+          }
+          const ccScope = (tp.contentScope || '').toLowerCase().trim();
+          const uScope = (uTp.contentScope || '').toLowerCase().trim();
+          if (ccScope && uScope && (ccScope === uScope || ccScope.includes(uScope) || uScope.includes(ccScope))) {
+            sim += 5;
+          }
+          const kw1 = (tp.contentScope || tp.statement || '').toLowerCase().split(/\s+/).filter((s: string) => s.length > 2);
+          const kw2 = (uTp.contentScope || uTp.statement || '').toLowerCase().split(/\s+/).filter((s: string) => s.length > 2);
+          sim += kw1.filter((k: string) => kw2.includes(k)).length;
+        });
+
+        if (sim > highestUnitSim) {
+          highestUnitSim = sim;
+          bestUnit = u;
+        }
+      });
+
+      if (bestUnit && highestUnitSim >= 2) {
+        if (!bestUnit.linkedTpIds.includes(tp.id)) {
+          bestUnit.linkedTpIds.push(tp.id);
+        }
+        if (!bestUnit.linkedAtpItemIds.includes(atp.id)) {
+          bestUnit.linkedAtpItemIds.push(atp.id);
+        }
+
+        let bestMat: any = null;
+        let highestMatSim = 0;
+
+        bestUnit.materials.forEach((mat: any) => {
+          let sim = 0;
+          const matTps = (mat.linkedTpIds || []).map((id: string) => tpMap.get(id)).filter(Boolean);
+          matTps.forEach((mTp: any) => {
+            if (tp.scopeCode && mTp.scopeCode && tp.scopeCode.trim().toUpperCase() === mTp.scopeCode.trim().toUpperCase()) {
+              sim += 10;
+            }
+            const ccScope = (tp.contentScope || '').toLowerCase().trim();
+            const mScope = (mTp.contentScope || '').toLowerCase().trim();
+            if (ccScope && mScope && (ccScope === mScope || ccScope.includes(mScope) || mScope.includes(ccScope))) {
+              sim += 5;
+            }
+            const kw1 = (tp.contentScope || tp.statement || '').toLowerCase().split(/\s+/).filter((s: string) => s.length > 2);
+            const kw2 = (mTp.contentScope || mTp.statement || '').toLowerCase().split(/\s+/).filter((s: string) => s.length > 2);
+            sim += kw1.filter((k: string) => kw2.includes(k)).length;
+          });
+
+          if (sim > highestMatSim) {
+            highestMatSim = sim;
+            bestMat = mat;
+          }
+        });
+
+        if (bestMat && highestMatSim >= 2) {
+          if (!bestMat.linkedTpIds.includes(tp.id)) {
+            bestMat.linkedTpIds.push(tp.id);
+          }
+          if (!bestMat.linkedAtpItemIds.includes(atp.id)) {
+            bestMat.linkedAtpItemIds.push(atp.id);
+          }
+        } else {
+          const matOrder = bestUnit.materials.length + 1;
+          const newMatTitle = tp.contentScope || tp.statement || `Materi ${matOrder}`;
+          bestUnit.materials.push({
+            id: `mat-recovered-${Date.now()}-${bestUnit.id}-${matOrder}`,
+            title: newMatTitle.length > 80 ? `${newMatTitle.substring(0, 77)}...` : newMatTitle,
+            order: matOrder,
+            linkedTpIds: [tp.id],
+            linkedAtpItemIds: [atp.id]
+          });
+        }
+      } else {
+        const newUnitOrder = mapping.units.length + 1;
+        const uTitle = tp.contentScope || tp.statement || `Unit ${newUnitOrder}`;
+        const newUnitTitle = `Bab ${newUnitOrder}: ${uTitle.length > 60 ? `${uTitle.substring(0, 57)}...` : uTitle}`;
+        const newUnitId = `unit-recovered-${Date.now()}-${newUnitOrder}`;
+
+        mapping.units.push({
+          id: newUnitId,
+          title: newUnitTitle,
+          order: newUnitOrder,
+          linkedTpIds: [tp.id],
+          linkedAtpItemIds: [atp.id],
+          materials: [
+            {
+              id: `mat-recovered-${Date.now()}-${newUnitId}-1`,
+              title: tp.contentScope || tp.statement || `Materi 1`,
+              order: 1,
+              linkedTpIds: [tp.id],
+              linkedAtpItemIds: [atp.id]
+            }
+          ]
+        });
+      }
+    });
+  }
+
+  mapping.units.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+  mapping.units.forEach((unit: any) => {
+    if (Array.isArray(unit.materials)) {
+      unit.materials.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+    }
+  });
+
+  return mapping;
 }
 
 

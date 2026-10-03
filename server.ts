@@ -19,6 +19,7 @@ import {
   fallbackRefineText,
   fallbackGenerateATPMapping,
   fallbackGenerateCanonicalATPUnitMapping,
+  enforceCanonicalMappingInvariants,
 } from './server/curriculumFallback';
 import { validateGraduateProfileDimensions } from './src/constants/graduateProfileDimensions';
 
@@ -1601,9 +1602,15 @@ Kembalikan respon JSON dengan skema:
         // Map existing units/materials for strict preservation
         const existingUnitsList = existingMapping && Array.isArray(existingMapping.units) ? existingMapping.units : [];
 
+        const consumedUnitIds = new Set<string>();
+
         const sanitizedUnits = rawUnits.map((u: any, uIdx: number) => {
           const unitOrder = u.order || uIdx + 1;
-          const matchedExisting = findBestExistingUnitMatch(u, existingUnitsList);
+          const availableUnits = existingUnitsList.filter(eu => !consumedUnitIds.has(eu.id));
+          const matchedExisting = findBestExistingUnitMatch(u, availableUnits);
+          if (matchedExisting) {
+            consumedUnitIds.add(matchedExisting.id);
+          }
 
           // Strictly preserve teacher title if non-empty
           const finalTitle =
@@ -1633,9 +1640,15 @@ Kembalikan respon JSON dengan skema:
           const existingMaterials = matchedExisting?.materials || [];
           const rawMaterials = Array.isArray(u.materials) ? u.materials : [];
 
+          const consumedMaterialIds = new Set<string>();
+
           const sanitizedMaterials = rawMaterials.map((m: any, mIdx: number) => {
             const matOrder = m.order || mIdx + 1;
-            const matchedMat = findBestExistingMaterialMatch(m, existingMaterials);
+            const availableMaterials = existingMaterials.filter(em => !consumedMaterialIds.has(em.id));
+            const matchedMat = findBestExistingMaterialMatch(m, availableMaterials);
+            if (matchedMat) {
+              consumedMaterialIds.add(matchedMat.id);
+            }
 
             const finalMatTitle =
               matchedMat && matchedMat.title && matchedMat.title.trim().length > 0
@@ -1718,71 +1731,6 @@ Kembalikan respon JSON dengan skema:
 
         sanitizedUnits.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
-        // COVERAGE CHECK: Ensure all canonical ATPItems are covered by at least one Unit
-        const mappedAtpItemIds = new Set<string>();
-        sanitizedUnits.forEach((u: any) => {
-          if (Array.isArray(u.linkedAtpItemIds)) {
-            u.linkedAtpItemIds.forEach((id: string) => mappedAtpItemIds.add(id));
-          }
-        });
-
-        const missingAtpItems = validAtpItems.filter(atp => !mappedAtpItemIds.has(atp.id));
-        if (missingAtpItems.length > 0) {
-          let canAssignAllSafely = true;
-          for (const missingAtp of missingAtpItems) {
-            const missingTp = missingAtp.tpId ? tpMap.get(missingAtp.tpId) : undefined;
-            let bestUnitIndex = -1;
-            let bestScore = -1;
-
-            sanitizedUnits.forEach((u: any, idx: number) => {
-              let score = 0;
-              const unitTpIds = u.linkedTpIds || [];
-              unitTpIds.forEach((uTpId: string) => {
-                const uTp = tpMap.get(uTpId);
-                if (uTp && missingTp) {
-                  if (uTp.scopeCode && missingTp.scopeCode && uTp.scopeCode === missingTp.scopeCode) {
-                    score += 10;
-                  }
-                  const kwMissing = extractKeywords(`${missingTp.contentScope || ''} ${missingTp.statement || ''}`);
-                  const kwUnitTp = extractKeywords(`${uTp.contentScope || ''} ${uTp.statement || ''}`);
-                  const overlap = kwMissing.filter(k => kwUnitTp.includes(k));
-                  score += overlap.length;
-                }
-              });
-              if (score > bestScore) {
-                bestScore = score;
-                bestUnitIndex = idx;
-              }
-            });
-
-            if (bestUnitIndex !== -1 && bestScore > 0) {
-              const targetUnit = sanitizedUnits[bestUnitIndex];
-              if (!targetUnit.linkedAtpItemIds.includes(missingAtp.id)) {
-                targetUnit.linkedAtpItemIds.push(missingAtp.id);
-              }
-              if (missingAtp.tpId && !targetUnit.linkedTpIds.includes(missingAtp.tpId)) {
-                targetUnit.linkedTpIds.push(missingAtp.tpId);
-              }
-              if (targetUnit.materials && targetUnit.materials.length > 0) {
-                const firstMat = targetUnit.materials[0];
-                if (!firstMat.linkedAtpItemIds.includes(missingAtp.id)) {
-                  firstMat.linkedAtpItemIds.push(missingAtp.id);
-                }
-                if (missingAtp.tpId && !firstMat.linkedTpIds.includes(missingAtp.tpId)) {
-                  firstMat.linkedTpIds.push(missingAtp.tpId);
-                }
-              }
-            } else {
-              canAssignAllSafely = false;
-            }
-          }
-
-          if (!canAssignAllSafely) {
-            console.warn('AI omitted some ATP items and semantic recovery failed.');
-            throw new Error('AI omitted ATP items and semantic recovery failed.');
-          }
-        }
-
         const canonicalResult = {
           id: existingMapping?.id || `aum-${Date.now()}`,
           academicSettingId: existingMapping?.academicSettingId || academicSettingId,
@@ -1794,9 +1742,11 @@ Kembalikan respon JSON dengan skema:
           updatedAt: new Date().toISOString(),
         };
 
+        const finalizedResult = enforceCanonicalMappingInvariants(canonicalResult, validTpItems, validAtpItems);
+
         return res.json({
           success: true,
-          data: canonicalResult,
+          data: finalizedResult,
           engine: 'gemini',
         });
       }
